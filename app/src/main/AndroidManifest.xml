@@ -30,6 +30,8 @@
 
     <!-- Allow on-device SpeechRecognizer, Alarm/Calendar Intents, and TraX / Better Health Tracker queries on Android 15+ -->
     <queries>
+        <package android:name="com.google.android.googlequicksearchbox" />
+        <package android:name="com.google.android.tts" />
         <package android:name="com.ailife.betterhealth" />
         <provider android:authorities="com.ailife.betterhealth.healthprovider" />
         <intent>

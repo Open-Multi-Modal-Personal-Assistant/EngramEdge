@@ -11,8 +11,10 @@ import dev.engram.edge.edge.ModelInstallStatus
 import dev.engram.edge.router.SystemOneDecision
 import dev.engram.edge.security.ShieldVerdict
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
+import android.speech.RecognizerIntent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
@@ -44,12 +46,20 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.VpnKey
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -63,12 +73,15 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.engram.edge.audio.SpeechUiState
 import kotlinx.coroutines.launch
 
 @Composable
@@ -109,6 +122,20 @@ fun EngramEdgeRootScreen(viewModel: EngramEdgeViewModel) {
         hasCameraPermission = granted
     }
 
+    val systemSpeechLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val text = result.data
+            ?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
+            ?.firstOrNull()
+            .orEmpty()
+            .trim()
+        if (text.isNotBlank()) {
+            viewModel.updateQueryInput(text)
+            viewModel.submitQuery(text)
+        }
+    }
+
     EngramEdgeDeckContent(
         uiState = uiState,
         memory = memory,
@@ -117,7 +144,7 @@ fun EngramEdgeRootScreen(viewModel: EngramEdgeViewModel) {
         pendingConfirmation = pending,
         lastShieldVerdict = shieldVerdict,
         liveBurst = liveBurst,
-        isListeningVoice = speech.isListening,
+        speech = speech,
         hasCameraPermission = hasCameraPermission,
         onToggleOnline = viewModel::toggleOnlineMode,
         onQueryChange = viewModel::updateQueryInput,
@@ -125,6 +152,13 @@ fun EngramEdgeRootScreen(viewModel: EngramEdgeViewModel) {
         onPushToTalk = {
             if (hasMicPermission) viewModel.togglePushToTalk()
             else micPermLauncher.launch(Manifest.permission.RECORD_AUDIO)
+        },
+        onLaunchSystemVoiceDialog = {
+            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                putExtra(RecognizerIntent.EXTRA_PROMPT, "Speak to EngramEdge...")
+            }
+            systemSpeechLauncher.launch(intent)
         },
         onConfirmSkill = viewModel::confirmPendingSkill,
         onDismissSkill = viewModel::dismissPendingSkill,
@@ -149,12 +183,13 @@ fun EngramEdgeDeckContent(
     pendingConfirmation: PendingConfirmation?,
     lastShieldVerdict: ShieldVerdict?,
     liveBurst: LiveBurstStatus,
-    isListeningVoice: Boolean,
+    speech: SpeechUiState,
     hasCameraPermission: Boolean,
     onToggleOnline: () -> Unit,
     onQueryChange: (String) -> Unit,
     onSubmitQuery: (String?, Boolean) -> Unit,
     onPushToTalk: () -> Unit,
+    onLaunchSystemVoiceDialog: () -> Unit,
     onConfirmSkill: () -> Unit,
     onDismissSkill: () -> Unit,
     onRequestCameraPermission: () -> Unit,
@@ -227,10 +262,11 @@ fun EngramEdgeDeckContent(
                         uiState = uiState,
                         lastDecision = lastDecision,
                         pendingConfirmation = pendingConfirmation,
-                        isListeningVoice = isListeningVoice,
+                        speech = speech,
                         onQueryChange = onQueryChange,
                         onSubmitQuery = onSubmitQuery,
                         onPushToTalk = onPushToTalk,
+                        onLaunchSystemVoiceDialog = onLaunchSystemVoiceDialog,
                         onConfirmSkill = onConfirmSkill,
                         onDismissSkill = onDismissSkill
                     )
@@ -272,10 +308,11 @@ private fun AskAndVoiceCard(
     uiState: EngramConversationUiState,
     lastDecision: SystemOneDecision?,
     pendingConfirmation: PendingConfirmation?,
-    isListeningVoice: Boolean,
+    speech: SpeechUiState,
     onQueryChange: (String) -> Unit,
     onSubmitQuery: (String?, Boolean) -> Unit,
     onPushToTalk: () -> Unit,
+    onLaunchSystemVoiceDialog: () -> Unit,
     onConfirmSkill: () -> Unit,
     onDismissSkill: () -> Unit
 ) {
@@ -304,14 +341,61 @@ private fun AskAndVoiceCard(
                 .height(EngramDimens.PrimaryTouchHeight),
             shape = RoundedCornerShape(EngramDimens.CardCornerRadius),
             colors = ButtonDefaults.buttonColors(
-                containerColor = if (isListeningVoice) EngramColors.CoralDanger else EngramColors.EmeraldEdge,
+                containerColor = if (speech.isListening) EngramColors.CoralDanger else EngramColors.EmeraldEdge,
                 contentColor = Color(0xFF001F0E)
             )
         ) {
             Text(
-                text = if (isListeningVoice) "LISTENING... TAP TO STOP" else "PUSH TO TALK (OFFLINE STT)",
+                text = if (speech.isListening) "LISTENING... TAP TO STOP" else "PUSH TO TALK (OFFLINE STT)",
                 style = MaterialTheme.typography.titleMedium
             )
+        }
+
+        // Live voice recognition transcription or error feedback
+        if (speech.isListening) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(Color(0xFF002914))
+                    .border(1.dp, EngramColors.EmeraldEdge, RoundedCornerShape(14.dp))
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text("🎙️", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    text = speech.partialTranscript.ifBlank { "Listening... speak near wrist mic" },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = EngramColors.EmeraldEdge
+                )
+            }
+        } else if (!speech.lastError.isNullOrBlank()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(Color(0xFF331414))
+                    .border(1.dp, EngramColors.CoralDanger, RoundedCornerShape(14.dp))
+                    .clickable { onLaunchSystemVoiceDialog() }
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text("⚠️", style = MaterialTheme.typography.titleMedium)
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = speech.lastError,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = EngramColors.CoralDanger
+                    )
+                    Text(
+                        text = "Tap to speak with Google Voice Dialog",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = EngramColors.EmeraldEdge
+                    )
+                }
+            }
         }
 
         // One-tap wrist presets so hackathon demos take zero typing on a 2-inch screen
@@ -699,6 +783,9 @@ private fun EdgeModelGalleryCard(
     onDownloadModel: (EdgeModelSpec) -> Unit,
     onCycleResidency: () -> Unit
 ) {
+    var isTokenExpanded by remember { mutableStateOf(hfToken.isBlank()) }
+    var isTokenVisible by remember { mutableStateOf(false) }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -735,13 +822,110 @@ private fun EdgeModelGalleryCard(
             }
         }
 
-        OutlinedTextField(
-            value = hfToken,
-            onValueChange = onUpdateHfToken,
-            placeholder = { Text("Optional HuggingFace Token (for gated Gemma)", style = MaterialTheme.typography.bodyMedium) },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true
-        )
+        // Collapsible HuggingFace Token Accordion
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp))
+                .background(EngramColors.CardSurface)
+                .border(1.dp, EngramColors.CardSurfaceElevated, RoundedCornerShape(16.dp))
+                .padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { isTokenExpanded = !isTokenExpanded },
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.VpnKey,
+                        contentDescription = "HF Token",
+                        tint = if (hfToken.isNotBlank()) EngramColors.EmeraldEdge else EngramColors.TextMuted,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Text(
+                        text = "HuggingFace Token",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = EngramColors.TextPrimary
+                    )
+                }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        text = if (hfToken.isNotBlank()) "CONFIGURED (••••)" else "NOT SET",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (hfToken.isNotBlank()) EngramColors.EmeraldEdge else EngramColors.TextMuted
+                    )
+                    Icon(
+                        imageVector = if (isTokenExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                        contentDescription = if (isTokenExpanded) "Collapse" else "Expand",
+                        tint = EngramColors.TextMuted,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+
+            if (isTokenExpanded) {
+                OutlinedTextField(
+                    value = hfToken,
+                    onValueChange = onUpdateHfToken,
+                    placeholder = {
+                        Text(
+                            "hf_... (for gated Gemma models)",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    visualTransformation = if (isTokenVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                    trailingIcon = {
+                        IconButton(onClick = { isTokenVisible = !isTokenVisible }) {
+                            Icon(
+                                imageVector = if (isTokenVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                contentDescription = if (isTokenVisible) "Hide token" else "Show token",
+                                tint = EngramColors.TextMuted
+                            )
+                        }
+                    }
+                )
+                Text(
+                    text = "Hardware-encrypted via AndroidKeyStore AES-256 GCM. Saved automatically.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = EngramColors.TextMuted
+                )
+            }
+        }
+
+        if (!gallery.lastError.isNullOrBlank()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(Color(0xFF3B1212))
+                    .border(1.dp, EngramColors.CoralDanger, RoundedCornerShape(14.dp))
+                    .padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Text(
+                    text = "DOWNLOAD ERROR",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = EngramColors.CoralDanger
+                )
+                Text(
+                    text = gallery.lastError,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = EngramColors.TextPrimary
+                )
+            }
+        }
 
         val statuses = gallery.statuses.ifEmpty {
             ModelCatalog.ALL_MODELS.map { ModelInstallStatus(it, null, false) }
@@ -777,43 +961,58 @@ private fun EdgeModelGalleryCard(
                     Spacer(Modifier.height(4.dp))
                     LinearProgressIndicator(
                         progress = { item.downloadProgress },
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        color = EngramColors.EmeraldEdge,
+                        trackColor = EngramColors.CardSurfaceElevated
                     )
                 }
 
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (item.installedFile != null) {
+                if (item.installedFile != null) {
+                    Button(
+                        onClick = { onSelectModel(item.spec) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(56.dp),
+                        shape = RoundedCornerShape(14.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (item.isLoaded) EngramColors.EmeraldEdge else EngramColors.CardSurfaceElevated,
+                            contentColor = if (item.isLoaded) Color(0xFF001F0E) else EngramColors.TextPrimary
+                        )
+                    ) {
+                        Text(
+                            text = if (item.isLoaded) "ACTIVE IN RAM" else "ACTIVATE ON WRIST",
+                            style = MaterialTheme.typography.labelLarge
+                        )
+                    }
+                } else {
+                    if (item.downloadProgress != null) {
                         Button(
-                            onClick = { onSelectModel(item.spec) },
+                            onClick = {},
+                            enabled = false,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(60.dp),
+                                .height(56.dp),
                             shape = RoundedCornerShape(14.dp)
                         ) {
                             Text(
-                                text = if (item.isLoaded) "ACTIVE IN RAM" else "ACTIVATE ON WRIST",
+                                text = "DOWNLOADING ${(item.downloadProgress * 100).toInt()}%",
                                 style = MaterialTheme.typography.labelLarge
                             )
                         }
                     } else {
-                        OutlinedButton(
+                        Button(
                             onClick = { onDownloadModel(item.spec) },
                             modifier = Modifier
-                                .weight(1f)
-                                .height(60.dp),
-                            shape = RoundedCornerShape(14.dp)
-                        ) {
-                            Text("PULL HF", style = MaterialTheme.typography.labelLarge)
-                        }
-                        Button(
-                            onClick = { onSelectModel(item.spec) },
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(60.dp),
-                            shape = RoundedCornerShape(14.dp)
+                                .fillMaxWidth()
+                                .height(56.dp),
+                            shape = RoundedCornerShape(14.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = EngramColors.EmeraldEdge,
+                                contentColor = Color(0xFF001F0E)
+                            )
                         ) {
                             Text(
-                                text = if (isSelected) "SELECTED" else "SELECT",
+                                text = "PULL FROM HUGGINGFACE",
                                 style = MaterialTheme.typography.labelLarge
                             )
                         }
@@ -850,12 +1049,13 @@ fun EngramEdgeSw426WatchPreview() {
             pendingConfirmation = null,
             lastShieldVerdict = null,
             liveBurst = LiveBurstStatus(),
-            isListeningVoice = false,
+            speech = SpeechUiState(),
             hasCameraPermission = false,
             onToggleOnline = {},
             onQueryChange = {},
             onSubmitQuery = { _, _ -> },
             onPushToTalk = {},
+            onLaunchSystemVoiceDialog = {},
             onConfirmSkill = {},
             onDismissSkill = {},
             onRequestCameraPermission = {},
