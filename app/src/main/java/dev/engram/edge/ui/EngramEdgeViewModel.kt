@@ -12,6 +12,7 @@ import dev.engram.edge.edge.EdgeModelSpec
 import dev.engram.edge.edge.GalleryRuntimeState
 import dev.engram.edge.edge.ResidencyMode
 import dev.engram.edge.router.SystemOneDecision
+import dev.engram.edge.security.EncryptedTokenStore
 import dev.engram.edge.security.ShieldVerdict
 import android.app.Application
 import android.graphics.Bitmap
@@ -39,9 +40,17 @@ data class EngramConversationUiState(
 class EngramEdgeViewModel(app: Application) : AndroidViewModel(app) {
 
     private val container = (app as EngramEdgeApplication).container
+    private val tokenStore = EncryptedTokenStore(app)
 
     private val _uiState = MutableStateFlow(EngramConversationUiState())
     val uiState: StateFlow<EngramConversationUiState> = _uiState.asStateFlow()
+
+    init {
+        val savedToken = tokenStore.loadHfToken().orEmpty()
+        if (savedToken.isNotBlank()) {
+            _uiState.update { it.copy(hfTokenInput = savedToken) }
+        }
+    }
 
     val memoryTelemetry: StateFlow<DeviceMemoryTelemetry> = container.residencyMonitor.telemetry
     val galleryState: StateFlow<GalleryRuntimeState> = container.galleryManager.state
@@ -58,6 +67,7 @@ class EngramEdgeViewModel(app: Application) : AndroidViewModel(app) {
 
     fun updateHfToken(token: String) {
         _uiState.update { it.copy(hfTokenInput = token) }
+        tokenStore.saveHfToken(token)
     }
 
     fun toggleOnlineMode() {
@@ -141,9 +151,24 @@ class EngramEdgeViewModel(app: Application) : AndroidViewModel(app) {
         if (speechState.value.isListening) {
             container.speechController.stopListening()
         } else {
+            _uiState.update {
+                it.copy(
+                    streamingAnswer = "Listening for voice input... Speak now.",
+                    executedTierBadge = "MICROPHONE ACTIVE"
+                )
+            }
             container.speechController.startPushToTalk(
-                preferOffline = !_uiState.value.isOnlineMode
+                preferOffline = !_uiState.value.isOnlineMode,
+                onError = { err ->
+                    _uiState.update { st ->
+                        st.copy(
+                            streamingAnswer = "Speech recognition: $err",
+                            executedTierBadge = "VOICE RETRY"
+                        )
+                    }
+                }
             ) { recognized ->
+                _uiState.update { it.copy(queryInput = recognized) }
                 submitQuery(recognized)
             }
         }
@@ -215,7 +240,7 @@ class EngramEdgeViewModel(app: Application) : AndroidViewModel(app) {
 
     fun downloadGalleryModel(spec: EdgeModelSpec) {
         viewModelScope.launch {
-            val token = _uiState.value.hfTokenInput.takeIf { it.isNotBlank() }
+            val token = _uiState.value.hfTokenInput.ifBlank { tokenStore.loadHfToken().orEmpty() }.takeIf { it.isNotBlank() }
             val res = container.galleryManager.downloadModelFromHuggingFace(spec, token)
             if (res.isSuccess) {
                 container.galleryManager.selectAndLoadModel(spec)
