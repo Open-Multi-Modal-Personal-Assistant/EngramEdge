@@ -257,6 +257,7 @@ class LiteRtModelGalleryManager(
         val finalFile = File(targetDir, spec.fileName)
 
         try {
+            Log.i(TAG, "Starting download for ${spec.displayName} from ${spec.downloadUrl}")
             updateDownloadProgress(spec.id, 0.01f)
             val reqBuilder = Request.Builder().url(spec.downloadUrl)
             if (!hfBearerToken.isNullOrBlank()) {
@@ -288,9 +289,11 @@ class LiteRtModelGalleryManager(
             if (finalFile.exists()) finalFile.delete()
             check(partFile.renameTo(finalFile)) { "Failed to finalize ${finalFile.name}" }
             updateDownloadProgress(spec.id, null)
+            Log.i(TAG, "Downloaded ${spec.displayName} successfully (${finalFile.length()} bytes) -> ${finalFile.absolutePath}")
             refreshCatalogStatuses()
             Result.success(finalFile)
         } catch (t: Throwable) {
+            Log.e(TAG, "Download failed for ${spec.displayName} (${spec.downloadUrl}): ${t.message}", t)
             partFile.delete()
             updateDownloadProgress(spec.id, null)
             _state.update { it.copy(lastError = "Download ${spec.shortBadge}: ${t.message}") }

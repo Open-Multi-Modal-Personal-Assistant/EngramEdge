@@ -39,9 +39,9 @@ object ModelCatalog {
         shortBadge = "EG2-440M",
         role = EdgeModelRole.EMBEDDING,
         fileName = "embeddinggemma-2-text-vision-440m.litertlm",
-        huggingFaceRepo = "litert-community/embeddinggemma-2-740m-litert-lm",
-        downloadUrl = "https://huggingface.co/litert-community/embeddinggemma-2-740m-litert-lm/resolve/main/embeddinggemma-2-text-vision-440m.litertlm",
-        approxDiskMb = 388,
+        huggingFaceRepo = "litert-community/embeddinggemma-2-text-vision-440m-litert-lm",
+        downloadUrl = "https://huggingface.co/litert-community/embeddinggemma-2-text-vision-440m-litert-lm/resolve/main/embeddinggemma-2-text-vision-440m.litertlm",
+        approxDiskMb = 370,
         approxPeakRssMb = 450,
         supportsVision = true,
         supportsToolCalling = false,
@@ -108,29 +108,15 @@ object ModelCatalog {
         summary = "Lowest-RAM Gemma 3 decoder for grounded ObjectBox RAG compression."
     )
 
-    val SMOLVLM_256M_INSTRUCT = EdgeModelSpec(
-        id = "smolvlm-256m-instruct",
-        displayName = "SmolVLM-256M-Instruct",
-        shortBadge = "SmolVLM-256M",
-        role = EdgeModelRole.VISION_LANGUAGE,
-        fileName = "smolvlm-256m-instruct.litertlm",
-        huggingFaceRepo = "litert-community/SmolVLM-256M-Instruct",
-        downloadUrl = "https://huggingface.co/litert-community/SmolVLM-256M-Instruct/resolve/main/smolvlm-256m-instruct.litertlm",
-        approxDiskMb = 280,
-        approxPeakRssMb = 520,
-        supportsVision = true,
-        supportsToolCalling = false,
-        summary = "Compact offline Vision-Language model co-resident with EG2-440M."
-    )
 
     val SMOLVLM2_500M_INSTRUCT = EdgeModelSpec(
         id = "smolvlm2-500m-instruct",
         displayName = "SmolVLM2-500M-Instruct",
         shortBadge = "SmolVLM2-500M",
         role = EdgeModelRole.VISION_LANGUAGE,
-        fileName = "smolvlm2-500m-instruct.litertlm",
-        huggingFaceRepo = "litert-community/SmolVLM2-500M-Video-Instruct",
-        downloadUrl = "https://huggingface.co/litert-community/SmolVLM2-500M-Video-Instruct/resolve/main/smolvlm2-500m-instruct.litertlm",
+        fileName = "SmolVLM2-500M.litertlm",
+        huggingFaceRepo = "litert-community/SmolVLM2-500M",
+        downloadUrl = "https://huggingface.co/litert-community/SmolVLM2-500M/resolve/main/SmolVLM2-500M.litertlm",
         approxDiskMb = 510,
         approxPeakRssMb = 720,
         supportsVision = true,
@@ -147,7 +133,6 @@ object ModelCatalog {
         QWEN3_0_6B_INT4,
         FUNCTION_GEMMA_270M,
         GEMMA3_270M_IT,
-        SMOLVLM_256M_INSTRUCT,
         SMOLVLM2_500M_INSTRUCT
     )
 
@@ -161,13 +146,23 @@ object ModelCatalog {
      * and `/sdcard/Download` so developers can either download in-app or `adb push`.
      */
     fun resolveInstalledFile(context: Context, spec: EdgeModelSpec): File? {
+        val fileNames = buildList {
+            add(spec.fileName)
+            if (spec.id == EMBEDDING_GEMMA2_TEXT_VISION_440M.id) {
+                add("eg2-gallery-compact.litertlm")
+                add("embeddinggemma-2-740m.litertlm")
+            }
+        }
+
         val candidates = buildList {
-            add(File(modelsDir(context), spec.fileName))
-            add(File(context.filesDir, spec.fileName))
-            context.getExternalFilesDir("models")?.let { add(File(it, spec.fileName)) }
-            context.getExternalFilesDir(null)?.let { add(File(it, spec.fileName)) }
-            @Suppress("DEPRECATION")
-            add(File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), spec.fileName))
+            for (fn in fileNames) {
+                add(File(modelsDir(context), fn))
+                add(File(context.filesDir, fn))
+                context.getExternalFilesDir("models")?.let { add(File(it, fn)) }
+                context.getExternalFilesDir(null)?.let { add(File(it, fn)) }
+                @Suppress("DEPRECATION")
+                add(File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), fn))
+            }
         }
         return candidates.firstOrNull { it.exists() && it.isFile && it.length() > 1_048_576L }
     }
