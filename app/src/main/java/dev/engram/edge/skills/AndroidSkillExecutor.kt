@@ -91,6 +91,13 @@ class AndroidSkillExecutor(
         )
 
         /**
+         * Weak reference or direct handle to CameraX CameraControl when camera preview is bound.
+         * Allows toggling flashlight even when CameraX holds the hardware open.
+         */
+        @Volatile
+        var activeCameraControl: androidx.camera.core.CameraControl? = null
+
+        /**
          * Fast-path deterministic heuristic parser for common FAW watch voice utterances.
          * Enables sub-10ms direct offline skill execution without resident LLM inference.
          */
@@ -433,6 +440,33 @@ class AndroidSkillExecutor(
     }
 
     private fun executeToggleWatchTorch(args: RunIntentArgs): SkillExecutionResult {
+        val desiredState = when (args.mode?.uppercase(Locale.US)) {
+            "ON", "TRUE", "1" -> true
+            "OFF", "FALSE", "0" -> false
+            else -> !torchEnabled
+        }
+
+        // 1. If CameraX preview is active on screen, control torch directly via CameraControl
+        val camCtrl = activeCameraControl
+        if (camCtrl != null) {
+            return runCatching {
+                camCtrl.enableTorch(desiredState)
+                torchEnabled = desiredState
+                SkillExecutionResult(
+                    executed = true,
+                    skillName = "toggle-watch-torch",
+                    summary = "Watch LED flashlight turned ${if (desiredState) "ON" else "OFF"} (via active CameraX preview)."
+                )
+            }.getOrElse { err ->
+                SkillExecutionResult(
+                    executed = false,
+                    skillName = "toggle-watch-torch",
+                    summary = "Unable to switch watch torch via CameraX: ${err.message}"
+                )
+            }
+        }
+
+        // 2. Camera preview is not open; control torch via standard CameraManager
         val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as? CameraManager
             ?: return SkillExecutionResult(
                 executed = false,
@@ -453,12 +487,6 @@ class AndroidSkillExecutor(
                 skillName = "toggle-watch-torch",
                 summary = "No dedicated camera LED flash unit reported on this FAW hardware."
             )
-        }
-
-        val desiredState = when (args.mode?.uppercase(Locale.US)) {
-            "ON", "TRUE", "1" -> true
-            "OFF", "FALSE", "0" -> false
-            else -> !torchEnabled
         }
 
         return runCatching {

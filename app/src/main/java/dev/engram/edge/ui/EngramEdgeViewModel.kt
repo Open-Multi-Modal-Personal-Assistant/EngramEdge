@@ -14,6 +14,8 @@ import dev.engram.edge.edge.ResidencyMode
 import dev.engram.edge.router.SystemOneDecision
 import dev.engram.edge.security.EncryptedTokenStore
 import dev.engram.edge.security.ShieldVerdict
+import dev.engram.edge.skills.AndroidSkillExecutor
+import dev.engram.edge.skills.RunIntentArgs
 import android.app.Application
 import android.graphics.Bitmap
 import androidx.lifecycle.AndroidViewModel
@@ -33,6 +35,11 @@ data class EngramConversationUiState(
     val executedTierBadge: String = "LOCAL READY",
     val citations: List<HybridMemoryResult> = emptyList(),
     val lastOcrStatus: String = "Point camera at a sign/receipt or tap a synthetic OCR test below.",
+    val lastExtractedOcrText: String? = null,
+    val lastStoredMemoryId: Long? = null,
+    val lastStoredMemoryTitle: String? = null,
+    val lastRetrievalDemo: List<HybridMemoryResult> = emptyList(),
+    val isTorchActive: Boolean = false,
     val lastCapturedJpeg: ByteArray? = null,
     val hfTokenInput: String = ""
 )
@@ -191,11 +198,20 @@ class EngramEdgeViewModel(app: Application) : AndroidViewModel(app) {
 
             when (outcome) {
                 is IngestionOutcome.Stored -> {
+                    val demoHits = container.memoryRepository.hybridSearch(
+                        query = outcome.entity.title,
+                        limit = 2
+                    ).results
+
                     _uiState.update {
                         it.copy(
                             lastCapturedJpeg = processed.jpegBytes,
                             executedTierBadge = "VAULT INDEXED",
-                            lastOcrStatus = "Indexed '${outcome.entity.title}' into ObjectBox 256d HNSW + AppSearch BM25F!"
+                            lastOcrStatus = "Indexed #${outcome.entity.id} '${outcome.entity.title}' into ObjectBox 256d HNSW + AppSearch BM25F!",
+                            lastExtractedOcrText = textBody,
+                            lastStoredMemoryId = outcome.entity.id,
+                            lastStoredMemoryTitle = outcome.entity.title,
+                            lastRetrievalDemo = demoHits
                         )
                     }
                 }
@@ -203,10 +219,38 @@ class EngramEdgeViewModel(app: Application) : AndroidViewModel(app) {
                     _uiState.update {
                         it.copy(
                             executedTierBadge = "SHIELD BLOCKED",
-                            lastOcrStatus = "BLOCKED (${outcome.verdict.triggeredCategory}, p=${"%.2f".format(outcome.verdict.injectionProbability)}): ${outcome.verdict.reason}"
+                            lastOcrStatus = "BLOCKED (${outcome.verdict.triggeredCategory}, p=${"%.2f".format(outcome.verdict.injectionProbability)}): ${outcome.verdict.reason}",
+                            lastExtractedOcrText = textBody,
+                            lastRetrievalDemo = emptyList()
                         )
                     }
                 }
+            }
+        }
+    }
+
+    fun queryVaultDirectly(query: String) {
+        viewModelScope.launch {
+            val res = container.memoryRepository.hybridSearch(query = query, limit = 2)
+            _uiState.update { it.copy(lastRetrievalDemo = res.results) }
+        }
+    }
+
+    fun toggleTorchDirectly() {
+        viewModelScope.launch {
+            val nextState = !_uiState.value.isTorchActive
+            val res = container.skillExecutor.executeRunIntent(
+                RunIntentArgs(
+                    action = AndroidSkillExecutor.ACTION_TOGGLE_TORCH,
+                    mode = if (nextState) "ON" else "OFF"
+                )
+            )
+            _uiState.update {
+                it.copy(
+                    isTorchActive = nextState,
+                    streamingAnswer = res.summary,
+                    executedTierBadge = "TORCH ${if (nextState) "ON" else "OFF"}"
+                )
             }
         }
     }

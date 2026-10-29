@@ -10,6 +10,7 @@ import dev.engram.edge.edge.ModelCatalog
 import dev.engram.edge.edge.ModelInstallStatus
 import dev.engram.edge.router.SystemOneDecision
 import dev.engram.edge.security.ShieldVerdict
+import dev.engram.edge.skills.AndroidSkillExecutor
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -38,6 +39,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
@@ -170,7 +172,9 @@ fun EngramEdgeRootScreen(viewModel: EngramEdgeViewModel) {
         onSelectModel = viewModel::selectGalleryModel,
         onDownloadModel = viewModel::downloadGalleryModel,
         onUpdateHfToken = viewModel::updateHfToken,
-        onCycleResidency = viewModel::cycleResidencyPolicy
+        onCycleResidency = viewModel::cycleResidencyPolicy,
+        onQueryVaultDirectly = viewModel::queryVaultDirectly,
+        onToggleTorch = viewModel::toggleTorchDirectly
     )
 }
 
@@ -200,7 +204,9 @@ fun EngramEdgeDeckContent(
     onSelectModel: (EdgeModelSpec) -> Unit,
     onDownloadModel: (EdgeModelSpec) -> Unit,
     onUpdateHfToken: (String) -> Unit,
-    onCycleResidency: () -> Unit
+    onCycleResidency: () -> Unit,
+    onQueryVaultDirectly: (String) -> Unit,
+    onToggleTorch: () -> Unit
 ) {
     val pagerState = rememberPagerState(pageCount = { 4 })
     val scope = rememberCoroutineScope()
@@ -274,13 +280,16 @@ fun EngramEdgeDeckContent(
                         uiState = uiState,
                         lastShieldVerdict = lastShieldVerdict,
                         hasCameraPermission = hasCameraPermission,
+                        isActive = (pagerState.currentPage == 1),
                         onRequestCameraPermission = onRequestCameraPermission,
                         onCaptureBitmap = onCaptureBitmap,
                         onRunSyntheticOcr = onRunSyntheticOcr,
-                        onAskAboutSnapshot = {
+                        onAskAboutSnapshot = { prompt ->
                             scope.launch { pagerState.animateScrollToPage(0) }
-                            onSubmitQuery("Describe what is in my latest captured snapshot.", true)
-                        }
+                            onSubmitQuery(prompt, true)
+                        },
+                        onTestRetrieval = onQueryVaultDirectly,
+                        onToggleTorch = onToggleTorch
                     )
                     2 -> GeminiLiveBurstCard(
                         liveBurst = liveBurst,
@@ -316,16 +325,19 @@ private fun AskAndVoiceCard(
     onConfirmSkill: () -> Unit,
     onDismissSkill: () -> Unit
 ) {
-    val quickPrompts = listOf(
-        "Parked Car?" to "Where did I park my rental EV and what is the plate?",
-        "Hotel Wi-Fi?" to "What is my Grand Hyatt room number and Wi-Fi passcode?",
-        "Live HR" to "Measure my heart rate right now",
-        "Log Vitals" to "Log my watch vitals and heart rate to memory",
-        "5m Timer" to "Start a countdown timer for 5 minutes",
-        "Torch" to "Toggle watch flashlight torch",
-        "BT Panel" to "Open Bluetooth settings on watch",
-        "Nearby Maps" to "Find nearby coffee shops open right now around me"
-    )
+    val quickPrompts = buildList {
+        if (!uiState.lastStoredMemoryTitle.isNullOrBlank()) {
+            add("Snap #${uiState.lastStoredMemoryId ?: "1"}?" to "What was the text and pin code in my ${uiState.lastStoredMemoryTitle}?")
+        }
+        add("Parked Car?" to "Where did I park my rental EV and what is the plate?")
+        add("Hotel Wi-Fi?" to "What is my Grand Hyatt room number and Wi-Fi passcode?")
+        add("Torch" to "Toggle watch flashlight torch")
+        add("Live HR" to "Measure my heart rate right now")
+        add("Log Vitals" to "Log my watch vitals and heart rate to memory")
+        add("5m Timer" to "Start a countdown timer for 5 minutes")
+        add("BT Panel" to "Open Bluetooth settings on watch")
+        add("Nearby Maps" to "Find nearby coffee shops open right now around me")
+    }
 
     Column(
         modifier = Modifier
@@ -541,10 +553,13 @@ private fun SnapOcrShieldCard(
     uiState: EngramConversationUiState,
     lastShieldVerdict: ShieldVerdict?,
     hasCameraPermission: Boolean,
+    isActive: Boolean,
     onRequestCameraPermission: () -> Unit,
     onCaptureBitmap: (Bitmap) -> Unit,
     onRunSyntheticOcr: (Boolean) -> Unit,
-    onAskAboutSnapshot: () -> Unit
+    onAskAboutSnapshot: (String) -> Unit,
+    onTestRetrieval: (String) -> Unit,
+    onToggleTorch: () -> Unit
 ) {
     var previewViewRef by remember { mutableStateOf<PreviewView?>(null) }
 
@@ -556,20 +571,42 @@ private fun SnapOcrShieldCard(
     ) {
         if (hasCameraPermission) {
             WatchCameraPreviewBox(
+                isActive = isActive,
                 onPreviewReady = { previewViewRef = it },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(170.dp)
                     .clip(RoundedCornerShape(18.dp))
             )
-            Button(
-                onClick = { previewViewRef?.bitmap?.let(onCaptureBitmap) },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(EngramDimens.PrimaryTouchHeight),
-                shape = RoundedCornerShape(EngramDimens.CardCornerRadius)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text("SNAP CAMERA -> OCR -> VAULT", style = MaterialTheme.typography.titleMedium)
+                Button(
+                    onClick = { previewViewRef?.bitmap?.let(onCaptureBitmap) },
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(EngramDimens.PrimaryTouchHeight),
+                    shape = RoundedCornerShape(EngramDimens.CardCornerRadius)
+                ) {
+                    Text("SNAP CAMERA -> OCR", style = MaterialTheme.typography.titleMedium)
+                }
+                OutlinedButton(
+                    onClick = onToggleTorch,
+                    modifier = Modifier
+                        .width(76.dp)
+                        .height(EngramDimens.PrimaryTouchHeight),
+                    shape = RoundedCornerShape(EngramDimens.CardCornerRadius),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        containerColor = if (uiState.isTorchActive) EngramColors.AmberWarn else Color.Transparent
+                    )
+                ) {
+                    Text(
+                        text = if (uiState.isTorchActive) "🔦 ON" else "🔦",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = if (uiState.isTorchActive) Color.Black else Color.White
+                    )
+                }
             }
         } else {
             OutlinedButton(
@@ -610,6 +647,43 @@ private fun SnapOcrShieldCard(
             }
         }
 
+        // Extracted OCR text display box
+        if (!uiState.lastExtractedOcrText.isNullOrBlank()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(Color(0xFF002213))
+                    .border(1.dp, EngramColors.EmeraldEdge, RoundedCornerShape(18.dp))
+                    .padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "📸 EXTRACTED OCR TEXT",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = EngramColors.EmeraldEdge,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "ML Kit 19.0",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = EngramColors.TextMuted
+                    )
+                }
+                Text(
+                    text = uiState.lastExtractedOcrText,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color.White
+                )
+            }
+        }
+
+        // OCR status & prompt injection shield verdict
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -637,15 +711,80 @@ private fun SnapOcrShieldCard(
             }
         }
 
-        if (uiState.lastCapturedJpeg != null) {
-            OutlinedButton(
-                onClick = onAskAboutSnapshot,
+        // Vault Storage & Retrieval Demo Card
+        if (uiState.lastStoredMemoryId != null) {
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(EngramDimens.SecondaryTouchHeight),
-                shape = RoundedCornerShape(16.dp)
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(EngramColors.CardSurface)
+                    .border(1.dp, Color(0xFF1B3224), RoundedCornerShape(18.dp))
+                    .padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                Text("ASK LOCAL SMOLVLM ABOUT SNAPSHOT", style = MaterialTheme.typography.labelLarge)
+                Text(
+                    text = "VAULT STORAGE & RETRIEVAL DEMO",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = EngramColors.CyanCloud,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = "Memory #${uiState.lastStoredMemoryId} indexed into ObjectBox (256d HNSW) and Android 15 AppSearch (BM25F).",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = EngramColors.TextPrimary
+                )
+
+                if (uiState.lastRetrievalDemo.isNotEmpty()) {
+                    Text(
+                        text = "Instant Hybrid RRF Verification:",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = EngramColors.AmberWarn
+                    )
+                    for (hit in uiState.lastRetrievalDemo.take(1)) {
+                        val cosStr = hit.cosineDistance?.let { "cos=${"%.2f".format(it)}" } ?: "cos=-"
+                        val lexStr = hit.lexicalRank?.let { "bm25=#$it" } ?: "bm25=-"
+                        Text(
+                            text = "• ${hit.chunk.title} [RRF=${"%.3f".format(hit.rrfScore)} | $cosStr | $lexStr]",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = EngramColors.EmeraldEdge
+                        )
+                        Text(
+                            text = "\"${hit.chunk.contentText.take(80)}...\"",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = EngramColors.TextMuted
+                        )
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        onClick = {
+                            val title = uiState.lastStoredMemoryTitle ?: "snapshot"
+                            onAskAboutSnapshot("What was the text and pin code in my $title?")
+                        },
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(EngramDimens.SecondaryTouchHeight),
+                        shape = RoundedCornerShape(14.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = EngramColors.EmeraldEdge)
+                    ) {
+                        Text("ASK IN CHAT ->", color = Color.Black, style = MaterialTheme.typography.labelLarge)
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            uiState.lastStoredMemoryTitle?.let(onTestRetrieval)
+                        },
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(EngramDimens.SecondaryTouchHeight),
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Text("RE-TEST RRF", style = MaterialTheme.typography.labelLarge)
+                    }
+                }
             }
         }
     }
@@ -653,6 +792,7 @@ private fun SnapOcrShieldCard(
 
 @Composable
 private fun WatchCameraPreviewBox(
+    isActive: Boolean,
     onPreviewReady: (PreviewView) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -660,9 +800,20 @@ private fun WatchCameraPreviewBox(
     val lifecycleOwner = LocalLifecycleOwner.current
     val previewView = remember { PreviewView(context) }
 
-    DisposableEffect(lifecycleOwner) {
+    DisposableEffect(isActive, lifecycleOwner) {
         val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
         val executor = ContextCompat.getMainExecutor(context)
+
+        if (!isActive) {
+            runCatching {
+                if (cameraProviderFuture.isDone) {
+                    cameraProviderFuture.get().unbindAll()
+                    AndroidSkillExecutor.activeCameraControl = null
+                }
+            }
+            return@DisposableEffect onDispose { }
+        }
+
         cameraProviderFuture.addListener({
             runCatching {
                 val provider = cameraProviderFuture.get()
@@ -675,13 +826,19 @@ private fun WatchCameraPreviewBox(
                 } else {
                     CameraSelector.DEFAULT_FRONT_CAMERA
                 }
-                provider.bindToLifecycle(lifecycleOwner, selector, preview)
+                val camera = provider.bindToLifecycle(lifecycleOwner, selector, preview)
+                AndroidSkillExecutor.activeCameraControl = camera.cameraControl
                 onPreviewReady(previewView)
             }
         }, executor)
 
         onDispose {
-            runCatching { cameraProviderFuture.get().unbindAll() }
+            runCatching {
+                if (cameraProviderFuture.isDone) {
+                    cameraProviderFuture.get().unbindAll()
+                    AndroidSkillExecutor.activeCameraControl = null
+                }
+            }
         }
     }
 
@@ -1066,7 +1223,9 @@ fun EngramEdgeSw426WatchPreview() {
             onSelectModel = {},
             onDownloadModel = {},
             onUpdateHfToken = {},
-            onCycleResidency = {}
+            onCycleResidency = {},
+            onQueryVaultDirectly = {},
+            onToggleTorch = {}
         )
     }
 }
