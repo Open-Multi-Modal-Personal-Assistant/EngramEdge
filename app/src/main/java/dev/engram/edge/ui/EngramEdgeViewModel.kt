@@ -91,9 +91,22 @@ class EngramEdgeViewModel(app: Application) : AndroidViewModel(app) {
         _uiState.update { it.copy(autoSpeakReplies = !it.autoSpeakReplies) }
     }
 
+    private var turnJob: kotlinx.coroutines.Job? = null
+
+    private fun sanitizeAnswer(raw: String): String {
+        if (!raw.contains("<think>")) return raw
+        return if (raw.contains("</think>")) {
+            raw.substringAfter("</think>").trim()
+        } else {
+            "Reasoning on wrist..."
+        }
+    }
+
     fun submitQuery(explicitQuery: String? = null, attachLastSnapshot: Boolean = false) {
         val q = (explicitQuery ?: _uiState.value.queryInput).trim()
-        if (q.isEmpty() || _uiState.value.isRunningTurn) return
+        if (q.isEmpty()) return
+
+        turnJob?.cancel()
 
         _uiState.update {
             it.copy(
@@ -103,28 +116,41 @@ class EngramEdgeViewModel(app: Application) : AndroidViewModel(app) {
             )
         }
 
-        viewModelScope.launch {
-            val imgBytes = if (attachLastSnapshot) _uiState.value.lastCapturedJpeg else null
-            val response = container.koogOrchestrator.runTurn(
-                utterance = q,
-                isOnline = _uiState.value.isOnlineMode,
-                attachedImageBytes = imgBytes,
-                onStreamToken = { partial ->
-                    _uiState.update { st -> st.copy(streamingAnswer = partial) }
-                }
-            )
-
-            _uiState.update {
-                it.copy(
-                    isRunningTurn = false,
-                    streamingAnswer = response.answerText,
-                    executedTierBadge = response.executedTierLabel,
-                    citations = response.citations
+        turnJob = viewModelScope.launch {
+            try {
+                val imgBytes = if (attachLastSnapshot) _uiState.value.lastCapturedJpeg else null
+                val response = container.koogOrchestrator.runTurn(
+                    utterance = q,
+                    isOnline = _uiState.value.isOnlineMode,
+                    attachedImageBytes = imgBytes,
+                    onStreamToken = { partial ->
+                        _uiState.update { st -> st.copy(streamingAnswer = sanitizeAnswer(partial)) }
+                    }
                 )
-            }
 
-            if (_uiState.value.autoSpeakReplies && response.pendingConfirmation == null) {
-                container.speechController.speakConciseReply(response.answerText)
+                val cleanFinal = sanitizeAnswer(response.answerText)
+                _uiState.update {
+                    it.copy(
+                        isRunningTurn = false,
+                        streamingAnswer = cleanFinal,
+                        executedTierBadge = response.executedTierLabel,
+                        citations = response.citations
+                    )
+                }
+
+                if (_uiState.value.autoSpeakReplies && response.pendingConfirmation == null) {
+                    container.speechController.speakConciseReply(cleanFinal)
+                }
+            } catch (_: kotlinx.coroutines.CancellationException) {
+                // Expected when user issues a new turn before old finishes
+            } catch (t: Throwable) {
+                _uiState.update {
+                    it.copy(
+                        isRunningTurn = false,
+                        streamingAnswer = "Error processing turn: ${t.message ?: t::class.simpleName}",
+                        executedTierBadge = "ERROR"
+                    )
+                }
             }
         }
     }

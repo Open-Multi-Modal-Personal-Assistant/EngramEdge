@@ -132,6 +132,15 @@ class SystemOneDecisionEngine(
                 }
             }
 
+            // Android Hardware Skills must NEVER escalate to cloud — they only exist on local device
+            if (selectedRoute == AgentRoute.ANDROID_DEVICE_SKILL) {
+                return if (maxProbability >= HIGH_CONFIDENCE_THRESHOLD) {
+                    ExecutionGate.AUTO_EXECUTE_LOCAL
+                } else {
+                    ExecutionGate.CONFIRM_ON_WRIST
+                }
+            }
+
             if (hasAttachedImage && selectedRoute == AgentRoute.VISUAL_SCENE_QA) {
                 return ExecutionGate.AUTO_EXECUTE_LOCAL
             }
@@ -142,13 +151,7 @@ class SystemOneDecisionEngine(
 
             return when {
                 maxProbability >= HIGH_CONFIDENCE_THRESHOLD -> ExecutionGate.AUTO_EXECUTE_LOCAL
-                maxProbability >= MID_CONFIDENCE_THRESHOLD -> {
-                    if (selectedRoute == AgentRoute.ANDROID_DEVICE_SKILL) {
-                        ExecutionGate.CONFIRM_ON_WRIST
-                    } else {
-                        ExecutionGate.AUTO_EXECUTE_LOCAL
-                    }
-                }
+                maxProbability >= MID_CONFIDENCE_THRESHOLD -> ExecutionGate.AUTO_EXECUTE_LOCAL
                 else -> ExecutionGate.ESCALATE_TO_FIREBASE_CLOUD
             }
         }
@@ -271,10 +274,10 @@ class SystemOneDecisionEngine(
         val lower = utterance.lowercase()
         return when (route) {
             AgentRoute.ANDROID_DEVICE_SKILL -> when {
-                Regex("""\b(set|create|start|schedule)\b.{0,20}\b(alarm|timer|countdown|calendar|meeting|appointment)\b""").containsMatchIn(lower) -> 0.25f
-                Regex("""\b(measure|check|read|log|record|save|what'?s\s+my)\b.{0,22}\b(heart\s*rate|pulse|bpm|spo2|blood\s*oxygen|oxygen|steps?|vitals?|battery)\b""").containsMatchIn(lower) -> 0.25f
-                Regex("""\b(turn\s+on|turn\s+off|toggle|mute|unmute|open|show)\b.{0,20}\b(torch|flashlight|volume|bluetooth|brightness|display|battery\s*saver)\b""").containsMatchIn(lower) -> 0.25f
-                Regex("""\b(alarm|timer|torch|flashlight|volume|mute|unmute|bluetooth|calendar|heart\s*rate|pulse|bpm|spo2|blood\s*oxygen|steps?|calories?|vitals?|better\s*health|trax|sensor|battery|calculate|math|tip\s+split)\b""").containsMatchIn(lower) -> 0.16f
+                Regex("""\b(set|create|start|schedule)\b.{0,20}\b(alarm|timer|countdown|calendar|meeting|appointment)\b""").containsMatchIn(lower) -> 0.30f
+                Regex("""\b(measure|check|read|log|record|save|show|tell\s+me|get|what'?s\s+my|what\s+are\s+my|what\s+is\s+my|how\s+are\s+my)\b.{0,24}\b(heart\s*rate|pulse|bpm|spo2|blood\s*oxygen|oxygen|steps?|vitals?|battery|sensors?)\b""").containsMatchIn(lower) -> 0.38f
+                Regex("""\b(turn\s+on|turn\s+off|toggle|mute|unmute|open|show)\b.{0,20}\b(torch|flashlight|volume|bluetooth|brightness|display|battery\s*saver)\b""").containsMatchIn(lower) -> 0.30f
+                Regex("""\b(alarm|timer|torch|flashlight|volume|mute|unmute|bluetooth|calendar|heart\s*rate|pulse|bpm|spo2|blood\s*oxygen|steps?|calories?|vitals?|better\s*health|trax|sensor|battery|calculate|math|tip\s+split)\b""").containsMatchIn(lower) -> 0.22f
                 else -> 0f
             }
             AgentRoute.LOCAL_MEMORY_RAG -> when {

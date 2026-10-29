@@ -203,14 +203,16 @@ class AndroidSkillExecutor(
                 )
             }
 
-            // 7. Log Vitals: e.g. "log my heart rate and vitals to memory"
-            if (lower.contains("log") && (lower.contains("vital") || lower.contains("heart rate") || lower.contains("vitals"))) {
-                return Pair(
-                    RunIntentArgs(
-                        action = ACTION_LOG_VITALS
-                    ),
-                    null
-                )
+            // 7. Watch Vitals & Wrist Sensors: e.g. "what are my vitals", "measure heart rate", "log vitals"
+            if (
+                lower.contains("vital") || lower.contains("heart rate") || lower.contains("pulse") ||
+                lower.contains("bpm") || lower.contains("spo2") || lower.contains("blood oxygen")
+            ) {
+                return if (lower.contains("log") || lower.contains("save") || lower.contains("record") || lower.contains("store")) {
+                    Pair(RunIntentArgs(action = ACTION_LOG_VITALS), null)
+                } else {
+                    Pair(RunIntentArgs(action = ACTION_READ_SENSORS, metric = "ALL"), null)
+                }
             }
 
             // 8. JS Calc: e.g. "calculate 18% tip on $45.60"

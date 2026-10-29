@@ -131,12 +131,38 @@ class EngramDynamicPromptExecutor(
         val imageBytes = attachedImageBytesForTurn
 
         if (resolvedModel.effectiveModel.provider == LLMProvider.Google) {
+            var emittedAny = false
+            var cloudError = false
             cloudBridge.streamCloudEscalation(
                 promptText = flattenedPrompt,
                 imageJpegBytes = imageBytes,
                 gpsCoordinatesHint = gpsHintForTurn
             ).collect { chunk ->
-                emit(StreamFrame.TextDelta(text = chunk))
+                if (chunk.startsWith("\n[Firebase AI Logic error:")) {
+                    cloudError = true
+                } else {
+                    emittedAny = true
+                    emit(StreamFrame.TextDelta(text = chunk))
+                }
+            }
+            if (!emittedAny || cloudError) {
+                // Cloud unavailable or unconfigured; fallback gracefully to local model
+                val selectedSpec = galleryManager.state.value.selectedSpec
+                val isInstalled = galleryManager.state.value.statuses
+                    .firstOrNull { it.spec.id == selectedSpec.id }
+                    ?.installedFile != null
+
+                if (isInstalled || galleryManager.state.value.loadedSpec != null) {
+                    galleryManager.streamLocalGeneration(
+                        prompt = flattenedPrompt,
+                        imageBytes = imageBytes
+                    ).collect { chunk ->
+                        emit(StreamFrame.TextDelta(text = chunk))
+                    }
+                } else {
+                    val synthesized = synthesizeExtractiveOfflineFallback(prompt)
+                    emit(StreamFrame.TextDelta(text = synthesized))
+                }
             }
         } else {
             val selectedSpec = galleryManager.state.value.selectedSpec

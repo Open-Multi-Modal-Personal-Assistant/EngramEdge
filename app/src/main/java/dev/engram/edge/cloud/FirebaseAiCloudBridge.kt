@@ -28,6 +28,7 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 data class LiveBurstStatus(
     val isStreaming: Boolean = false,
@@ -83,16 +84,20 @@ class FirebaseAiCloudBridge(
             appCheckInitialized = true
 
             val rc = Firebase.remoteConfig
-            rc.setConfigSettingsAsync(
-                remoteConfigSettings { minimumFetchIntervalInSeconds = 300L }
-            ).await()
-            rc.setDefaultsAsync(
-                mapOf(
-                    "engram_cloud_model" to DEFAULT_CLOUD_MODEL,
-                    "engram_live_model" to DEFAULT_LIVE_MODEL
-                )
-            ).await()
-            runCatching { rc.fetchAndActivate().await() }
+            withTimeoutOrNull(2_500L) {
+                runCatching {
+                    rc.setConfigSettingsAsync(
+                        remoteConfigSettings { minimumFetchIntervalInSeconds = 300L }
+                    ).await()
+                    rc.setDefaultsAsync(
+                        mapOf(
+                            "engram_cloud_model" to DEFAULT_CLOUD_MODEL,
+                            "engram_live_model" to DEFAULT_LIVE_MODEL
+                        )
+                    ).await()
+                    rc.fetchAndActivate().await()
+                }
+            }
             val fetched = rc.getString("engram_cloud_model").ifBlank { DEFAULT_CLOUD_MODEL }
             _cloudModelName.value = fetched
         }
