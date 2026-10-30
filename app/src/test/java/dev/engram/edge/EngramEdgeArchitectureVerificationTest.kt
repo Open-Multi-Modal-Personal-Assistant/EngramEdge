@@ -273,12 +273,20 @@ class EngramEdgeArchitectureVerificationTest {
         assertThat(functionGemma.fileName).isEqualTo("mobile_actions_q8_ekv1024.litertlm")
         assertThat(functionGemma.downloadUrl).contains(functionGemma.huggingFaceRepo)
         assertThat(functionGemma.downloadUrl).endsWith(functionGemma.fileName)
+        assertThat(functionGemma.isGated).isTrue()
+        assertThat(functionGemma.gateUrl).isEqualTo("https://huggingface.co/litert-community/functiongemma-270m-ft-mobile-actions")
 
         val gemma3 = ModelCatalog.GEMMA3_270M_IT
         assertThat(gemma3.huggingFaceRepo).isEqualTo("litert-community/gemma-3-270m-it")
         assertThat(gemma3.fileName).isEqualTo("gemma3-270m-it-q8.litertlm")
         assertThat(gemma3.downloadUrl).contains(gemma3.huggingFaceRepo)
         assertThat(gemma3.downloadUrl).endsWith(gemma3.fileName)
+        assertThat(gemma3.isGated).isTrue()
+        assertThat(gemma3.gateUrl).isEqualTo("https://huggingface.co/litert-community/gemma-3-270m-it")
+
+        assertThat(ModelCatalog.QWEN3_0_6B_INT4.isGated).isFalse()
+        assertThat(ModelCatalog.EMBEDDING_GEMMA2_TEXT_VISION_440M.isGated).isFalse()
+        assertThat(ModelCatalog.SMOLVLM2_500M_INSTRUCT.isGated).isFalse()
 
         val allIds = ModelCatalog.ALL_MODELS.map { it.id }
         assertThat(allIds).containsAtLeast(

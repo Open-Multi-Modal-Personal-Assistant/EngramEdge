@@ -1157,6 +1157,29 @@ private fun EdgeModelGalleryCard(
                     )
                 }
 
+                if (item.installedFile == null && item.spec.isGated) {
+                    val uriHandler = LocalUriHandler.current
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "🔒 Gated (Gemma License)",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = EngramColors.AmberWarn
+                        )
+                        Text(
+                            text = "Accept terms ↗",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = EngramColors.CyanCloud,
+                            modifier = Modifier.clickable {
+                                runCatching { uriHandler.openUri(item.spec.gateUrl) }
+                            }
+                        )
+                    }
+                }
+
                 if (item.downloadProgress != null) {
                     Spacer(Modifier.height(4.dp))
                     LinearProgressIndicator(

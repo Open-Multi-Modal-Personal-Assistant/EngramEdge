@@ -22,8 +22,12 @@ data class EdgeModelSpec(
     val approxPeakRssMb: Int,
     val supportsVision: Boolean,
     val supportsToolCalling: Boolean,
-    val summary: String
-)
+    val summary: String,
+    val isGated: Boolean = false
+) {
+    val gateUrl: String
+        get() = "https://huggingface.co/$huggingFaceRepo"
+}
 
 /**
  * Switchable AI Edge Gallery model catalog tailored to a 4 GB physical RAM Android 15 device.
@@ -90,7 +94,8 @@ object ModelCatalog {
         approxPeakRssMb = 360,
         supportsVision = false,
         supportsToolCalling = true,
-        summary = "130+ tok/s tool-calling specialist for Android native SKILL.md intents."
+        summary = "130+ tok/s tool-calling specialist for Android native SKILL.md intents.",
+        isGated = true
     )
 
     val GEMMA3_270M_IT = EdgeModelSpec(
@@ -105,7 +110,8 @@ object ModelCatalog {
         approxPeakRssMb = 380,
         supportsVision = false,
         supportsToolCalling = true,
-        summary = "Lowest-RAM Gemma 3 decoder for grounded ObjectBox RAG compression."
+        summary = "Lowest-RAM Gemma 3 decoder for grounded ObjectBox RAG compression.",
+        isGated = true
     )
 
 
