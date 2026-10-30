@@ -54,9 +54,9 @@ data class FawHealthSnapshot(
             parts += "HR: $heartRateBpm BPM ($ageTag)"
         } else {
             parts += if (hasStandardAndroidHrSensor) {
-                "HR: Android Sensor(21) ready"
+                "HR: No reading yet (wear snugly & tap 'Live HR')"
             } else {
-                "HR: no reading yet"
+                "HR: no sensor detected"
             }
         }
 
@@ -131,7 +131,7 @@ class BetterHealthTrackerBridge(
 
         private const val CACHED_BROADCAST_TIMEOUT_MS = 2_800L
         private const val LIVE_OPTICAL_BROADCAST_TIMEOUT_MS = 22_000L
-        private const val NATIVE_HR_LIVE_TIMEOUT_MS = 10_000L
+        private const val NATIVE_HR_LIVE_TIMEOUT_MS = 12_000L
         private const val NATIVE_STEP_TIMEOUT_MS = 1_500L
 
         /** Known non-standard FAW optical HR / SpO2 sensor type IDs across HSC & CD watch firmwares. */
@@ -244,7 +244,10 @@ class BetterHealthTrackerBridge(
                 spo2Percent = mergedSpo2,
                 spo2TimestampMs = v2ProviderData?.spo2TimestampMs,
                 stepsToday = mergedSteps,
-                hasStandardAndroidHrSensor = nativeHrSensor != null
+                hasStandardAndroidHrSensor = nativeHrSensor != null,
+                diagnosticNote = if (forceLiveMeasurement && nativeLiveHr == null) {
+                    "Wear watch snugly on wrist for optical lock"
+                } else null
             )
             lastSnapshot = snap
             return@withContext snap
@@ -672,16 +675,12 @@ class BetterHealthTrackerBridge(
                         override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
                     }
                     listenerRef = listener
-                    val registered = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
-                        sensorManager.registerListener(
-                            listener,
-                            sensor,
-                            SensorManager.SENSOR_DELAY_NORMAL,
-                            Handler(Looper.getMainLooper())
-                        )
-                    } else {
-                        false
-                    }
+                    val registered = sensorManager.registerListener(
+                        listener,
+                        sensor,
+                        SensorManager.SENSOR_DELAY_FASTEST,
+                        Handler(Looper.getMainLooper())
+                    )
                     if (!registered && continuation.isActive) {
                         continuation.resume(null)
                     }

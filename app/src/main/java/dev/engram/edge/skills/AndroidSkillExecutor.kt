@@ -203,15 +203,24 @@ class AndroidSkillExecutor(
                 )
             }
 
-            // 7. Watch Vitals & Wrist Sensors: e.g. "what are my vitals", "measure heart rate", "log vitals"
+            // 7. Watch Vitals & Wrist Sensors: e.g. "what are my vitals", "measure heart rate", "log vitals", "live hr"
             if (
                 lower.contains("vital") || lower.contains("heart rate") || lower.contains("pulse") ||
                 lower.contains("bpm") || lower.contains("spo2") || lower.contains("blood oxygen")
             ) {
+                val isExplicitLive = lower.contains("measure") || lower.contains("now") ||
+                    lower.contains("live") || lower.contains("scan") || lower.contains("check pulse") ||
+                    lower.contains("take my")
+                val targetMetric = when {
+                    lower.contains("spo2") || lower.contains("oxygen") -> BetterHealthTrackerBridge.DATA_OXYGEN
+                    lower.contains("heart") || lower.contains("pulse") || lower.contains("bpm") -> BetterHealthTrackerBridge.DATA_HR
+                    else -> "ALL"
+                }
+                val liveMode = if (isExplicitLive) BetterHealthTrackerBridge.TYPE_NOW else null
                 return if (lower.contains("log") || lower.contains("save") || lower.contains("record") || lower.contains("store")) {
-                    Pair(RunIntentArgs(action = ACTION_LOG_VITALS), null)
+                    Pair(RunIntentArgs(action = ACTION_LOG_VITALS, metric = targetMetric, mode = liveMode), null)
                 } else {
-                    Pair(RunIntentArgs(action = ACTION_READ_SENSORS, metric = "ALL"), null)
+                    Pair(RunIntentArgs(action = ACTION_READ_SENSORS, metric = targetMetric, mode = liveMode), null)
                 }
             }
 
