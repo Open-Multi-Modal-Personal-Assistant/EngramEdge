@@ -11,7 +11,7 @@ Instead of sending every voice memo, camera snapshot, or personal inquiry to the
 ## Architecture & Documentation
 
 - [**System Architecture Specification**](file:///home/csaba/repos/AIML/OpenMMPA/EngramEdge/docs/ARCHITECTURE.md): Complete engineering specification covering the 4GB memory topology, Matryoshka 256d vector embeddings, ObjectBox + AppSearch hybrid vault, Jev-style System-1 router, JetBrains Koog 1.3.0 orchestration, Jetpack AppState cross-component synchronization, and 3-tier health hardware bridge.
-- [**User & Operator Guide**](file:///home/csaba/repos/AIML/OpenMMPA/EngramEdge/docs/USER_GUIDE.md): Practical guide covering micro-display ergonomics (~2.0"–2.4" screen, 80dp touch targets), built-in device skills, wireless ADB setup, and sensor tracking.
+- [**Getting Started & User Guide**](file:///home/csaba/repos/AIML/OpenMMPA/EngramEdge/docs/USER_GUIDE.md): Step-by-step 5-minute quickstart, micro-display ergonomics (~2.0"–2.4" screen, 80dp touch targets), built-in device skills, wireless ADB setup, and sensor tracking.
 
 ---
 
