@@ -211,13 +211,28 @@ class EngramEdgeViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             _uiState.update { it.copy(lastOcrStatus = "Running on-device ML Kit OCR + PromptInjectionShield...") }
             val processed = container.cameraOcrManager.processBitmap(bitmap)
-            val textBody = processed.extractedOcrText.ifBlank { fallbackLabel }
-            val title = textBody.lines().firstOrNull()?.take(36)?.ifBlank { "Snapshot" } ?: "Snapshot"
+            val hasOcrText = processed.extractedOcrText.isNotBlank()
+            val isSyntheticCustom = fallbackLabel.isNotBlank() && fallbackLabel != "Snapshot"
+            val textBody = when {
+                hasOcrText -> processed.extractedOcrText
+                isSyntheticCustom -> fallbackLabel
+                else -> "[Camera Frame: No printed text detected by ML Kit OCR]"
+            }
+            val title = when {
+                hasOcrText -> textBody.lines().firstOrNull { it.isNotBlank() }?.take(36)?.trim() ?: "Snapshot"
+                isSyntheticCustom -> fallbackLabel.lines().firstOrNull { it.isNotBlank() }?.take(36)?.trim() ?: "Snapshot"
+                else -> "Visual Frame #${(System.currentTimeMillis() / 1000) % 10000}"
+            }
+            val modality = if (hasOcrText || isSyntheticCustom) {
+                MemoryChunkEntity.Modality.OCR
+            } else {
+                MemoryChunkEntity.Modality.IMAGE
+            }
 
             val outcome = container.memoryRepository.ingestTextOrOcrMemory(
                 title = title,
                 contentText = textBody,
-                modality = MemoryChunkEntity.Modality.OCR,
+                modality = modality,
                 isTrustedSource = false, // Forces Chokepoint A PromptInjectionShield inspection!
                 rawImageBytes = processed.jpegBytes
             )
@@ -229,12 +244,18 @@ class EngramEdgeViewModel(app: Application) : AndroidViewModel(app) {
                         limit = 2
                     ).results
 
+                    val statusMessage = if (hasOcrText || isSyntheticCustom) {
+                        "Indexed #${outcome.entity.id} '${outcome.entity.title}' into ObjectBox 256d HNSW + AppSearch BM25F!"
+                    } else {
+                        "No text found by ML Kit OCR. Stored 256d visual embedding in ObjectBox! (Use 'TEST BENIGN SIGN' for OCR demo, or ASK with photo for VLM description)."
+                    }
+
                     _uiState.update {
                         it.copy(
                             lastCapturedJpeg = processed.jpegBytes,
-                            executedTierBadge = "VAULT INDEXED",
-                            lastOcrStatus = "Indexed #${outcome.entity.id} '${outcome.entity.title}' into ObjectBox 256d HNSW + AppSearch BM25F!",
-                            lastExtractedOcrText = textBody,
+                            executedTierBadge = if (hasOcrText) "VAULT INDEXED" else "VISUAL STORED",
+                            lastOcrStatus = statusMessage,
+                            lastExtractedOcrText = if (hasOcrText || isSyntheticCustom) textBody else "(No printed text found in camera frame)",
                             lastStoredMemoryId = outcome.entity.id,
                             lastStoredMemoryTitle = outcome.entity.title,
                             lastRetrievalDemo = demoHits

@@ -335,6 +335,9 @@ private fun AskAndVoiceCard(
         if (!uiState.lastStoredMemoryTitle.isNullOrBlank()) {
             add("Snap #${uiState.lastStoredMemoryId ?: "1"}?" to "What was the text and pin code in my ${uiState.lastStoredMemoryTitle}?")
         }
+        if (uiState.lastCapturedJpeg != null) {
+            add("Describe Snap" to "Describe what you see in this photo snapshot")
+        }
         add("Parked Car?" to "Where did I park my rental EV and what is the plate?")
         add("Hotel Wi-Fi?" to "What is my Grand Hyatt room number and Wi-Fi passcode?")
         add("Torch" to "Toggle watch flashlight torch")
@@ -424,7 +427,7 @@ private fun AskAndVoiceCard(
         ) {
             for ((shortLabel, fullPrompt) in quickPrompts) {
                 OutlinedButton(
-                    onClick = { onSubmitQuery(fullPrompt, false) },
+                    onClick = { onSubmitQuery(fullPrompt, shortLabel == "Describe Snap") },
                     modifier = Modifier.heightIn(min = 52.dp),
                     shape = RoundedCornerShape(16.dp),
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
