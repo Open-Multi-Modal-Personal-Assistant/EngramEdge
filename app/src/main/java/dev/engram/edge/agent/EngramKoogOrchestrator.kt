@@ -441,8 +441,8 @@ class EngramKoogOrchestrator(
             buildString {
                 if (citations.isNotEmpty()) {
                     appendLine("GROUNDED_VAULT_CONTEXT:")
-                    for (hit in citations) {
-                        appendLine("- [${hit.chunk.modalityType} | ${hit.chunk.title}]: ${hit.chunk.contentText}")
+                    for (hit in citations.take(2)) {
+                        appendLine("- [${hit.chunk.modalityType} | ${hit.chunk.title}]: ${hit.chunk.contentText.take(280)}")
                     }
                     appendLine()
                 }

@@ -51,8 +51,8 @@ class FirebaseAiCloudBridge(
     private val context: Context
 ) {
     companion object {
-        const val DEFAULT_CLOUD_MODEL = "gemini-2.5-flash"
-        const val DEFAULT_LIVE_MODEL = "gemini-2.0-flash-live-preview-04-09"
+        const val DEFAULT_CLOUD_MODEL = "gemini-3.8-flash"
+        const val DEFAULT_LIVE_MODEL = "gemini-3.8-flash"
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)

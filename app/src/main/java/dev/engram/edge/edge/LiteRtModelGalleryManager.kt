@@ -136,7 +136,7 @@ class LiteRtModelGalleryManager(
                     modelPath = file.absolutePath,
                     backend = Backend.CPU(),
                     visionBackend = visionBackend,
-                    maxNumTokens = 1024, // Keep KV-cache compact on 4 GB device
+                    maxNumTokens = 2048, // Expanded KV-cache context window for Qwen3-0.6B
                     maxNumImages = if (spec.supportsVision) 1 else null,
                     cacheDir = context.cacheDir.absolutePath
                 )
@@ -202,6 +202,9 @@ class LiteRtModelGalleryManager(
         if (installed != null && _state.value.loadedSpec?.id != activeSpec.id) {
             selectAndLoadModel(activeSpec)
         }
+
+        // Reset conversation so Koog's structured prompt does not compound prior turn history
+        runCatching { resetConversation() }
 
         val activeConversation = conversation
         if (activeConversation == null) {
