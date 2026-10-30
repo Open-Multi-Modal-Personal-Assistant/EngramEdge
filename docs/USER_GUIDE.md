@@ -83,22 +83,6 @@ The top bar persistently displays a headless `@Composable` projection (`androidx
 
 ---
 
-## 3. Tiny Phone & Watch Hardware Skills
-
-EngramEdge includes 7 built-in device tools configured via the `SKILL.md` specification:
-
-1. **Voice Alarms & Countdown Timers:**
-   * *"Set a timer for 12 minutes"*
-   * *"Wake me up at 6:30 AM tomorrow"*
-2. **Flashlight Torch Control:**
-   * *"Turn on the flashlight"* (Instantly toggles rear camera LED torch via `CameraManager`)
-3. **Health Vitals Reading & Vault Logging:**
-   * *"What is my heart rate?"* (Samples via 3-tier battery-safe sensor bridge)
-   * *"Log my vitals"* (Indexes current BPM, oxygen, and timestamp directly into the Engram vault)
-4. **Volume & Quick Settings Panels:**
-   * *"Turn up the volume"*
----
-
 ## 4. Tiny Phone & Watch Hardware Skills
 
 EngramEdge includes 7 built-in device tools configured via the `SKILL.md` specification:
@@ -124,7 +108,19 @@ EngramEdge includes 7 built-in device tools configured via the `SKILL.md` specif
 
 ---
 
-## 5. In-Depth Setup, Installation & Permissions
+## 5. Android 16+ Jetpack AppFunctions Integration
+
+EngramEdge implements `BaseEngramAppFunctionService` (targetSdk 36 / compileSdk 37), exposing 3 typed capabilities to system intelligence and external on-device AI agents without launching the UI:
+
+1. **`searchMemories(query, maxResults)`:** Fuses ObjectBox 256d HNSW cosine search with AppSearch BM25F lexical matching via Reciprocal Rank Fusion.
+2. **`saveMemoryNote(title, content)`:** Ingests personal memories, gates them through the on-device `PromptInjectionShield`, embeds them with `EmbeddingGemma 2`, and updates the vault bookmark.
+3. **`readWristVitals(metric, forceLiveMeasurement)`:** Reads cached TraX V2 vitals or executes a live optical PPG sample, returning structured BPM, SpO2, and step counts.
+
+Each background `AppFunction` execution updates the in-memory runtime telemetry in `EngramAppStateCoordinator` and is reflected on the top HUD pill (e.g. `• AF#1`).
+
+---
+
+## 6. In-Depth Setup, Installation & Permissions
 
 ### Build & Direct Install via ADB
 ```bash
@@ -157,7 +153,7 @@ adb -s $DEVICE_SERIAL shell pm grant dev.engram.edge com.ailife.betterhealth.REA
 
 ---
 
-## 6. Wireless ADB for Wearable Testing
+## 7. Wireless ADB for Wearable Testing
 
 When wearing a Full Android Watch snugly on your wrist to test optical PPG heart rate tracking, the physical USB pogo cable will break skin contact. Use Wi-Fi ADB:
 
