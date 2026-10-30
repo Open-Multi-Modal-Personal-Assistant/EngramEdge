@@ -75,6 +75,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -1063,7 +1064,7 @@ private fun EdgeModelGalleryCard(
                     }
                 )
                 Text(
-                    text = "Hardware-encrypted via AndroidKeyStore AES-256 GCM. Saved automatically.",
+                    text = "Hardware-encrypted via AndroidKeyStore AES-256 GCM. Saved automatically.\nNote: Gated models (FunctionGemma, Gemma 3) require a Read token whose HF account has accepted the model license terms at huggingface.co.",
                     style = MaterialTheme.typography.labelSmall,
                     color = EngramColors.TextMuted
                 )
@@ -1071,6 +1072,9 @@ private fun EdgeModelGalleryCard(
         }
 
         if (!gallery.lastError.isNullOrBlank()) {
+            val uriHandler = LocalUriHandler.current
+            val hfUrlMatch = Regex("https://huggingface\\.co/[a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+").find(gallery.lastError)?.value
+
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1078,7 +1082,7 @@ private fun EdgeModelGalleryCard(
                     .background(Color(0xFF3B1212))
                     .border(1.dp, EngramColors.CoralDanger, RoundedCornerShape(14.dp))
                     .padding(12.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text(
                     text = "DOWNLOAD ERROR",
@@ -1090,6 +1094,24 @@ private fun EdgeModelGalleryCard(
                     style = MaterialTheme.typography.bodySmall,
                     color = EngramColors.TextPrimary
                 )
+                if (hfUrlMatch != null) {
+                    Button(
+                        onClick = { runCatching { uriHandler.openUri(hfUrlMatch) } },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = EngramColors.CoralDanger,
+                            contentColor = Color.White
+                        )
+                    ) {
+                        Text(
+                            text = "OPEN HF TO ACCEPT LICENSE",
+                            style = MaterialTheme.typography.labelMedium
+                        )
+                    }
+                }
             }
         }
 

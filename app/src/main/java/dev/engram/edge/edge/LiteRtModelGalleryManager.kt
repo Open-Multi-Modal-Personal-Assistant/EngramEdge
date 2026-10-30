@@ -318,7 +318,25 @@ class LiteRtModelGalleryManager(
 
             httpClient.newCall(reqBuilder.build()).execute().use { response ->
                 if (!response.isSuccessful) {
-                    error("HTTP ${response.code}: ${response.message} (Gated HF repos require an HF token)")
+                    val code = response.code
+                    val xErrorCode = response.header("X-Error-Code") ?: response.header("x-error-code")
+                    val xErrorMsg = response.header("X-Error-Message") ?: response.header("x-error-message")
+                    val rawBodySnippet = runCatching { response.body.string().take(200).trim() }.getOrNull()
+
+                    val detail = when {
+                        !xErrorMsg.isNullOrBlank() -> if (!xErrorCode.isNullOrBlank()) "$xErrorCode: $xErrorMsg" else xErrorMsg
+                        !rawBodySnippet.isNullOrBlank() && !rawBodySnippet.startsWith("<!DOCTYPE") -> rawBodySnippet
+                        !xErrorCode.isNullOrBlank() -> xErrorCode
+                        else -> response.message.ifBlank { "Request failed" }
+                    }
+
+                    val diagnosticMessage = when (code) {
+                        401 -> "HTTP 401 Unauthorized ($detail). Verify your HF token is valid in the HuggingFace Token section."
+                        403 -> "HTTP 403 Forbidden ($detail).\nAction required: Accept model license at https://huggingface.co/${spec.huggingFaceRepo} (and ensure your token is a 'Read' token or has gated repo access)."
+                        404 -> "HTTP 404 Not Found ($detail). File ${spec.fileName} does not exist in repo ${spec.huggingFaceRepo}."
+                        else -> "HTTP $code: $detail"
+                    }
+                    error(diagnosticMessage)
                 }
                 val body = response.body
                 val totalBytes = body.contentLength().coerceAtLeast(spec.approxDiskMb * 1024L * 1024L)

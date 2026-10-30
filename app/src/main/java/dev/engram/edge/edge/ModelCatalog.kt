@@ -152,6 +152,13 @@ object ModelCatalog {
                 add("eg2-gallery-compact.litertlm")
                 add("embeddinggemma-2-740m.litertlm")
             }
+            if (spec.id == FUNCTION_GEMMA_270M.id) {
+                add("functiongemma-270m-ft-mobile.litertlm")
+                add("functiongemma-270m-ft-mobile-actions.litertlm")
+            }
+            if (spec.id == GEMMA3_270M_IT.id) {
+                add("gemma3-270m-it.litertlm")
+            }
         }
 
         val candidates = buildList {
@@ -161,7 +168,9 @@ object ModelCatalog {
                 context.getExternalFilesDir("models")?.let { add(File(it, fn)) }
                 context.getExternalFilesDir(null)?.let { add(File(it, fn)) }
                 @Suppress("DEPRECATION")
-                add(File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), fn))
+                val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+                add(File(downloadsDir, fn))
+                add(File(downloadsDir, "models/$fn"))
             }
         }
         return candidates.firstOrNull { it.exists() && it.isFile && it.length() > 1_048_576L }
