@@ -148,6 +148,7 @@ The application continuously monitors memory pressure via:
 
 * **`CO-RESIDENT` Mode (Default):** Both `EmbeddingGemma 2` and the compact synthesis LLM (`Gemma 3 270M-IT` or `Qwen3-0.6B`) reside simultaneously in RAM for instant, sub-second query and synthesis.
 * **`AUTO-SWAP` Mode (Emergency Fallback):** If `MemAvailable` drops below **340 MB**, the monitor unloads the generative LLM while computing embeddings or running camera ingestion, and unloads embeddings when streaming generative answers, completely preventing LMKD crash terminations.
+* **Dynamic Hardware Tier & Suitability Detection:** Evaluates `/proc/meminfo` physical total RAM at runtime. Automatically classifies model suitability (`OPTIMAL FOR HARDWARE`, `HIGH RAM • AUTO-SWAP`, or `REQUIRES 6GB+ RAM`), guards against loading 2B+ models (`Gemma 4 E2B`) on memory-constrained devices, and expands KV-cache to 4096 tokens on 6GB+ hardware.
 
 ---
 

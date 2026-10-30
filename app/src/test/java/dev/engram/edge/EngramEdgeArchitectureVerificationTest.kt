@@ -11,6 +11,7 @@ import dev.engram.edge.edge.EmbeddingGemmaEngine
 import dev.engram.edge.edge.GalleryRuntimeState
 import dev.engram.edge.edge.LiteRtModelGalleryManager
 import dev.engram.edge.edge.ModelCatalog
+import dev.engram.edge.edge.ModelMemorySuitability
 import dev.engram.edge.edge.ResidencyMode
 import dev.engram.edge.router.AgentRoute
 import dev.engram.edge.router.ChoiceDecision
@@ -315,8 +316,60 @@ class EngramEdgeArchitectureVerificationTest {
             "functiongemma-270m",
             "gemma3-270m-it",
             "qwen3-0.6b-int4",
-            "embeddinggemma-2-text-vision-440m"
+            "qwen3.5-0.8b",
+            "smollm2-360m-instruct",
+            "falcon-h1-0.5b-instruct",
+            "gemma3-1b-it",
+            "embeddinggemma-2-text-vision-440m",
+            "embeddinggemma-300m",
+            "deepseek-r1-distill-qwen-1.5b",
+            "gemma4-e2b-it"
         )
+    }
+
+    @Test
+    fun modelCatalog_dynamicMemoryProfileDetection_evaluatesDeviceTiersAndSuitability() {
+        val watch4GbTelemetry = DeviceMemoryTelemetry(
+            physicalTotalMb = 4096L,
+            memAvailableMb = 1400L
+        )
+        val watch6GbTelemetry = DeviceMemoryTelemetry(
+            physicalTotalMb = 6144L,
+            memAvailableMb = 3400L
+        )
+        val tightMemTelemetry = DeviceMemoryTelemetry(
+            physicalTotalMb = 4096L,
+            memAvailableMb = 320L
+        )
+
+        // Qwen3-0.6B and Qwen3.5-0.8B on 4GB watch are Optimal
+        assertThat(ModelCatalog.QWEN3_0_6B_INT4.evaluateSuitability(watch4GbTelemetry))
+            .isEqualTo(ModelMemorySuitability.COMPATIBLE)
+        assertThat(ModelCatalog.QWEN35_0_8B.evaluateSuitability(watch4GbTelemetry))
+            .isEqualTo(ModelMemorySuitability.COMPATIBLE)
+
+        // 1.5B and 2B models on 4GB watch detect insufficient hardware RAM
+        assertThat(ModelCatalog.GEMMA4_E2B_IT.evaluateSuitability(watch4GbTelemetry))
+            .isEqualTo(ModelMemorySuitability.INSUFFICIENT_HARDWARE_RAM)
+        assertThat(ModelCatalog.DEEPSEEK_R1_DISTILL_QWEN_1_5B.evaluateSuitability(watch4GbTelemetry))
+            .isEqualTo(ModelMemorySuitability.INSUFFICIENT_HARDWARE_RAM)
+
+        // On 6GB watch, Gemma 4 E2B and DeepSeek R1 1.5B are Optimal
+        assertThat(ModelCatalog.GEMMA4_E2B_IT.evaluateSuitability(watch6GbTelemetry))
+            .isEqualTo(ModelMemorySuitability.COMPATIBLE)
+        assertThat(ModelCatalog.DEEPSEEK_R1_DISTILL_QWEN_1_5B.evaluateSuitability(watch6GbTelemetry))
+            .isEqualTo(ModelMemorySuitability.COMPATIBLE)
+
+        // Under tight RAM, models recommend Auto-Swap
+        assertThat(ModelCatalog.QWEN3_0_6B_INT4.evaluateSuitability(tightMemTelemetry))
+            .isEqualTo(ModelMemorySuitability.MARGINAL_AUTO_SWAP)
+
+        // Context token limits scale for 6GB devices
+        val tokens6Gb = LiteRtModelGalleryManager.determineCandidateTokenLimits(
+            ModelCatalog.GEMMA4_E2B_IT,
+            watch6GbTelemetry
+        )
+        assertThat(tokens6Gb).contains(2048)
     }
 
     @Test

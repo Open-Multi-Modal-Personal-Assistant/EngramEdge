@@ -9,6 +9,7 @@ import dev.engram.edge.edge.EdgeModelSpec
 import dev.engram.edge.edge.GalleryRuntimeState
 import dev.engram.edge.edge.ModelCatalog
 import dev.engram.edge.edge.ModelInstallStatus
+import dev.engram.edge.edge.ModelMemorySuitability
 import dev.engram.edge.router.SystemOneDecision
 import dev.engram.edge.security.ShieldVerdict
 import dev.engram.edge.skills.AndroidSkillExecutor
@@ -973,8 +974,9 @@ private fun EdgeModelGalleryCard(
                 .padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
+            val deviceRamGb = (memory.physicalTotalMb + 512L) / 1024L
             Text(
-                text = "4GB LPDDR RESIDENCY: ${memory.residencyMode.badge}",
+                text = "${deviceRamGb}GB LPDDR RESIDENCY: ${memory.residencyMode.badge}",
                 style = MaterialTheme.typography.titleMedium,
                 color = EngramColors.EmeraldEdge
             )
@@ -1069,7 +1071,7 @@ private fun EdgeModelGalleryCard(
                     }
                 )
                 Text(
-                    text = "Hardware-encrypted via AndroidKeyStore AES-256 GCM. Saved automatically.\nNote: Gated models (FunctionGemma, Gemma 3) require a Read token whose HF account has accepted the model license terms at huggingface.co.",
+                    text = "Hardware-encrypted via AndroidKeyStore AES-256 GCM. Saved automatically.\nNote: Gated models (FunctionGemma, Gemma 3, Gemma 4) require a Read token whose HF account has accepted the model license terms at huggingface.co.",
                     style = MaterialTheme.typography.labelSmall,
                     color = EngramColors.TextMuted
                 )
@@ -1126,6 +1128,7 @@ private fun EdgeModelGalleryCard(
 
         for (item in statuses) {
             val isSelected = gallery.selectedSpec.id == item.spec.id
+            val suitability = item.spec.evaluateSuitability(memory)
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1139,11 +1142,28 @@ private fun EdgeModelGalleryCard(
                     .padding(12.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                Text(
-                    text = "${item.spec.displayName} (${item.spec.approxDiskMb} MB)",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = EngramColors.TextPrimary
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "${item.spec.displayName} (${item.spec.approxDiskMb} MB)",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = EngramColors.TextPrimary,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        text = suitability.badge,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = when (suitability) {
+                            ModelMemorySuitability.COMPATIBLE -> EngramColors.EmeraldEdge
+                            ModelMemorySuitability.MARGINAL_AUTO_SWAP -> EngramColors.AmberWarn
+                            ModelMemorySuitability.INSUFFICIENT_HARDWARE_RAM -> EngramColors.CoralDanger
+                        }
+                    )
+                }
                 Text(
                     text = item.spec.summary,
                     style = MaterialTheme.typography.bodyMedium,

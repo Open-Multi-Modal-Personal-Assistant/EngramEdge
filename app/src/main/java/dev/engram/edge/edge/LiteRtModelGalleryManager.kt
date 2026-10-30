@@ -122,8 +122,23 @@ class LiteRtModelGalleryManager(
                 return@withLock true
             }
 
-            // If device memory is in AUTO_SWAP_ON_DEMAND mode, free embedder weights before loading >500MB VLM/LLM
-            if (residencyMonitor.refreshNow().residencyMode == ResidencyMode.AUTO_SWAP_ON_DEMAND) {
+            val currentMem = residencyMonitor.refreshNow()
+            val suitability = spec.evaluateSuitability(currentMem)
+
+            // Dynamic memory protection: prevent loading 2B+ models on memory-constrained devices
+            if (suitability == ModelMemorySuitability.INSUFFICIENT_HARDWARE_RAM && currentMem.memAvailableMb < 600L) {
+                val errMsg = "Memory Guard: ${spec.displayName} requires ${spec.minPhysicalRamMb / 1024}GB+ RAM. Device has ${currentMem.physicalTotalMb}MB (${currentMem.memAvailableMb}MB free)."
+                Log.w(TAG, errMsg)
+                _state.update { it.copy(lastError = errMsg) }
+                refreshCatalogStatuses()
+                return@withLock false
+            }
+
+            // If device memory is in AUTO_SWAP_ON_DEMAND mode or model is heavy, free embedder weights before loading
+            if (currentMem.residencyMode == ResidencyMode.AUTO_SWAP_ON_DEMAND ||
+                suitability == ModelMemorySuitability.MARGINAL_AUTO_SWAP ||
+                spec.approxPeakRssMb > 600
+            ) {
                 embeddingEngine.unloadIdleWeights()
             }
 
@@ -463,6 +478,10 @@ class LiteRtModelGalleryManager(
             telemetry: DeviceMemoryTelemetry
         ): List<Int> {
             val target = when {
+                // High RAM device (6GB+)
+                telemetry.physicalTotalMb >= 5500L -> {
+                    if (spec.approxPeakRssMb > 1500) 2048 else 4096
+                }
                 // VLMs allocate large visual projection and image patch tensors (~100-200MB)
                 spec.supportsVision -> {
                     if (telemetry.physicalTotalMb >= 3500L && telemetry.memAvailableMb >= 1200L) 4096 else 2048
