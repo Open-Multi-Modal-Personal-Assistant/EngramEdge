@@ -35,6 +35,15 @@ sealed interface IngestionOutcome {
     data class BlockedByPromptShield(val verdict: ShieldVerdict) : IngestionOutcome
 }
 
+data class ReindexProgress(
+    val current: Int = 0,
+    val total: Int = 0,
+    val isRunning: Boolean = false
+) {
+    val progressFraction: Float
+        get() = if (total > 0) (current.toFloat() / total.toFloat()).coerceIn(0f, 1f) else 0f
+}
+
 /**
  * Coordinates ObjectBox 6 HNSW (256d MRL EmbeddingGemma 2 vectors) with Android 15
  * AppSearch PlatformStorage (BM25F) via Reciprocal Rank Fusion (RRF), gated on ingress
@@ -50,6 +59,9 @@ class HybridMemoryRepository(
 
     private val _recentMemories = MutableStateFlow<List<MemoryChunkEntity>>(emptyList())
     val recentMemories: StateFlow<List<MemoryChunkEntity>> = _recentMemories.asStateFlow()
+
+    private val _reindexProgress = MutableStateFlow(ReindexProgress())
+    val reindexProgress: StateFlow<ReindexProgress> = _reindexProgress.asStateFlow()
 
     suspend fun initializeAndSeedDemoVault() = withContext(Dispatchers.IO) {
         appSearchIndex.ensureInitialized()
@@ -96,7 +108,8 @@ class HybridMemoryRepository(
             tagsCsv = tagsCsv,
             isTrustedSource = isTrustedSource,
             timestampMillis = System.currentTimeMillis(),
-            embedding = vector256
+            embedding = vector256,
+            embeddingModelId = embeddingEngine.activeModelId
         )
 
         box.put(entity)
@@ -177,6 +190,55 @@ class HybridMemoryRepository(
     }
 
     fun count(): Long = box.count()
+
+    /**
+     * Counts how many stored chunks have an [MemoryChunkEntity.embeddingModelId] that does not match
+     * the currently active embedder ([EmbeddingGemmaEngine.activeModelId]).
+     */
+    fun countMismatchedEmbeddings(): Int {
+        val currentModel = embeddingEngine.activeModelId
+        val chunks = box.all
+        return chunks.count { it.embeddingModelId != currentModel }
+    }
+
+    /**
+     * Recomputes 256-dimensional MRL embeddings for all stored memory chunks using the
+     * currently active embedder, updating [MemoryChunkEntity.embedding] and [MemoryChunkEntity.embeddingModelId].
+     *
+     * Runs in batches on Dispatchers.IO, updating [_reindexProgress] for UI visibility.
+     * Returns the count of re-embedded chunks.
+     */
+    suspend fun reindexAllWithActiveEmbeddingModel(): Int = withContext(Dispatchers.IO) {
+        val currentModel = embeddingEngine.activeModelId
+        val chunks = box.all
+        val mismatched = chunks.filter { it.embeddingModelId != currentModel }
+        if (mismatched.isEmpty()) {
+            _reindexProgress.value = ReindexProgress(0, 0, false)
+            return@withContext 0
+        }
+
+        val total = mismatched.size
+        _reindexProgress.value = ReindexProgress(0, total, true)
+
+        try {
+            var processed = 0
+            val batchSize = 10
+            for (batch in mismatched.chunked(batchSize)) {
+                for (chunk in batch) {
+                    val formatted = HybridSearchMath.formatDocumentText(chunk.title, chunk.contentText)
+                    chunk.embedding = embeddingEngine.embedRawText256(formatted)
+                    chunk.embeddingModelId = currentModel
+                    processed++
+                    _reindexProgress.value = ReindexProgress(processed, total, true)
+                }
+                box.put(batch)
+            }
+            refreshRecentMemories()
+            processed
+        } finally {
+            _reindexProgress.value = ReindexProgress(total, total, false)
+        }
+    }
 
     private fun refreshRecentMemories() {
         val latest = box.query()

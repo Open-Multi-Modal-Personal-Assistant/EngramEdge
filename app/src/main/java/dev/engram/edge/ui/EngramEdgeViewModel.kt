@@ -62,6 +62,7 @@ class EngramEdgeViewModel(app: Application) : AndroidViewModel(app) {
     val memoryTelemetry: StateFlow<DeviceMemoryTelemetry> = container.residencyMonitor.telemetry
     val galleryState: StateFlow<GalleryRuntimeState> = container.galleryManager.state
     val recentMemories: StateFlow<List<MemoryChunkEntity>> = container.memoryRepository.recentMemories
+    val reindexProgress: StateFlow<dev.engram.edge.data.memory.ReindexProgress> = container.memoryRepository.reindexProgress
     val lastDecision: StateFlow<SystemOneDecision?> = container.koogOrchestrator.lastDecision
     val pendingConfirmation: StateFlow<PendingConfirmation?> = container.koogOrchestrator.pendingConfirmation
     val lastShieldVerdict: StateFlow<ShieldVerdict?> = container.promptShield.lastVerdict

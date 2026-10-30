@@ -5,7 +5,7 @@
   "entities": [
     {
       "id": "1:6056319924402615754",
-      "lastPropertyId": "9:703913307475651085",
+      "lastPropertyId": "10:3618697001928274613",
       "name": "MemoryChunkEntity",
       "properties": [
         {
@@ -61,13 +61,20 @@
           "indexId": "4:8498508126550780866",
           "type": 28,
           "flags": 8
+        },
+        {
+          "id": "10:3618697001928274613",
+          "name": "embeddingModelId",
+          "indexId": "5:1761458655858622113",
+          "type": 9,
+          "flags": 2048
         }
       ],
       "relations": []
     }
   ],
   "lastEntityId": "1:6056319924402615754",
-  "lastIndexId": "4:8498508126550780866",
+  "lastIndexId": "5:1761458655858622113",
   "lastRelationId": "0:0",
   "lastSequenceId": "0:0",
   "modelVersion": 5,

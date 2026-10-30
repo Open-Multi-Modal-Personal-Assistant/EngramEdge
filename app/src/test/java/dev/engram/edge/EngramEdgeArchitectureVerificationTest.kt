@@ -1,7 +1,9 @@
 package dev.engram.edge
 
 import dev.engram.edge.data.memory.HybridSearchMath
+import dev.engram.edge.data.memory.MemoryChunkEntity
 import dev.engram.edge.edge.DeviceMemoryTelemetry
+import dev.engram.edge.edge.EmbeddingGemmaEngine
 import dev.engram.edge.edge.LiteRtModelGalleryManager
 import dev.engram.edge.edge.ModelCatalog
 import dev.engram.edge.router.AgentRoute
@@ -262,5 +264,47 @@ class EngramEdgeArchitectureVerificationTest {
             telemetry = constrainedTelemetry
         )
         assertThat(lowCandidates).containsExactly(2048, 1024).inOrder()
+    }
+
+    @Test
+    fun modelCatalog_specsAndGatedRepositoriesAreProperlyConfigured() {
+        val functionGemma = ModelCatalog.FUNCTION_GEMMA_270M
+        assertThat(functionGemma.huggingFaceRepo).isEqualTo("litert-community/functiongemma-270m-ft-mobile-actions")
+        assertThat(functionGemma.fileName).isEqualTo("mobile_actions_q8_ekv1024.litertlm")
+        assertThat(functionGemma.downloadUrl).contains(functionGemma.huggingFaceRepo)
+        assertThat(functionGemma.downloadUrl).endsWith(functionGemma.fileName)
+
+        val gemma3 = ModelCatalog.GEMMA3_270M_IT
+        assertThat(gemma3.huggingFaceRepo).isEqualTo("litert-community/gemma-3-270m-it")
+        assertThat(gemma3.fileName).isEqualTo("gemma3-270m-it-q8.litertlm")
+        assertThat(gemma3.downloadUrl).contains(gemma3.huggingFaceRepo)
+        assertThat(gemma3.downloadUrl).endsWith(gemma3.fileName)
+
+        val allIds = ModelCatalog.ALL_MODELS.map { it.id }
+        assertThat(allIds).containsAtLeast(
+            "functiongemma-270m",
+            "gemma3-270m-it",
+            "qwen3-0.6b-int4",
+            "embeddinggemma-2-text-vision-440m"
+        )
+    }
+
+    @Test
+    fun memoryChunkEntity_tracksEmbeddingModelIdAndDetectsMismatches() {
+        val simHashChunk = MemoryChunkEntity(
+            title = "Car Parking",
+            contentText = "Level 2 Green",
+            embeddingModelId = EmbeddingGemmaEngine.SIMHASH_MODEL_ID
+        )
+        assertThat(simHashChunk.embeddingModelId).isEqualTo("simhash-256d")
+
+        val eg2Chunk = MemoryChunkEntity(
+            title = "Car Parking",
+            contentText = "Level 2 Green",
+            embeddingModelId = ModelCatalog.EMBEDDING_GEMMA2_TEXT_VISION_440M.id
+        )
+        assertThat(eg2Chunk.embeddingModelId).isEqualTo("embeddinggemma-2-text-vision-440m")
+
+        assertThat(simHashChunk.embeddingModelId).isNotEqualTo(eg2Chunk.embeddingModelId)
     }
 }

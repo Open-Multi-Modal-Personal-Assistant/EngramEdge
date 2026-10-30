@@ -45,6 +45,12 @@ class EmbeddingGemmaEngine(
     private val _isNeuralLoaded = MutableStateFlow(false)
     val isNeuralLoaded: StateFlow<Boolean> = _isNeuralLoaded.asStateFlow()
 
+    val activeModelId: String
+        get() = loadedSpec?.id ?: SIMHASH_MODEL_ID
+
+    val activeSpec: EdgeModelSpec?
+        get() = loadedSpec
+
     var activeModeLabel: String = "SimHash-256d (Ready • Add EG2 .litertlm)"
         private set
 
@@ -237,6 +243,7 @@ class EmbeddingGemmaEngine(
 
     companion object {
         private const val TAG = "EmbeddingGemmaEngine"
+        const val SIMHASH_MODEL_ID = "simhash-256d"
 
         private val CONCEPT_SYNONYMS = mapOf(
             "car" to listOf("parking", "vehicle", "garage"),

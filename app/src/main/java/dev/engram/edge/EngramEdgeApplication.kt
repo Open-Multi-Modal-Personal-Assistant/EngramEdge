@@ -97,8 +97,10 @@ class EngramEdgeApplication : Application() {
 
         appScope.launch {
             container.skillExecutor.stageAndDiscoverSkills()
-            container.memoryRepository.initializeAndSeedDemoVault()
             container.embeddingEngine.tryLoadBestAvailableModel()
+            container.galleryManager.refreshCatalogStatuses()
+            container.memoryRepository.initializeAndSeedDemoVault()
+            container.memoryRepository.reindexAllWithActiveEmbeddingModel()
             container.cloudBridge.initializeIfConfigured()
         }
     }

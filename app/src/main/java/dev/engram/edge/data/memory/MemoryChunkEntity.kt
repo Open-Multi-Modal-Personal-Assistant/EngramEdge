@@ -28,7 +28,8 @@ data class MemoryChunkEntity(
         neighborsPerNode = 16,
         distanceType = VectorDistanceType.COSINE
     )
-    var embedding: FloatArray? = null
+    var embedding: FloatArray? = null,
+    @Index var embeddingModelId: String = ""
 ) {
     enum class Modality {
         TEXT,
