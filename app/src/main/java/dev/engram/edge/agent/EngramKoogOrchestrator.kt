@@ -441,8 +441,10 @@ class EngramKoogOrchestrator(
             buildString {
                 if (citations.isNotEmpty()) {
                     appendLine("GROUNDED_VAULT_CONTEXT:")
-                    for (hit in citations.take(2)) {
-                        appendLine("- [${hit.chunk.modalityType} | ${hit.chunk.title}]: ${hit.chunk.contentText.take(280)}")
+                    val maxHits = if (galleryManager.state.value.activeMaxTokens >= 4096) 3 else 2
+                    val maxCharsPerHit = if (galleryManager.state.value.activeMaxTokens >= 4096) 420 else 280
+                    for (hit in citations.take(maxHits)) {
+                        appendLine("- [${hit.chunk.modalityType} | ${hit.chunk.title}]: ${hit.chunk.contentText.take(maxCharsPerHit)}")
                     }
                     appendLine()
                 }

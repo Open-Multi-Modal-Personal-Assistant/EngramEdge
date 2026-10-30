@@ -1,6 +1,9 @@
 package dev.engram.edge
 
 import dev.engram.edge.data.memory.HybridSearchMath
+import dev.engram.edge.edge.DeviceMemoryTelemetry
+import dev.engram.edge.edge.LiteRtModelGalleryManager
+import dev.engram.edge.edge.ModelCatalog
 import dev.engram.edge.router.AgentRoute
 import dev.engram.edge.router.ExecutionGate
 import dev.engram.edge.router.SystemOneDecisionEngine
@@ -216,5 +219,48 @@ class EngramEdgeArchitectureVerificationTest {
         assertThat(formatted).contains("HR: 74 BPM")
         assertThat(formatted).contains("SpO2: 98%")
         assertThat(formatted).contains("Steps: 4820")
+    }
+
+    @Test
+    fun determineCandidateTokenLimits_scalesToHardwareMemoryTopology() {
+        // 4GB Smartwatch (such as APPLLP 9 MAX with ~1.5GB available headroom)
+        val watchTelemetry = DeviceMemoryTelemetry(
+            physicalTotalMb = 3923L,
+            memAvailableMb = 1585L
+        )
+        val watchCandidates = LiteRtModelGalleryManager.determineCandidateTokenLimits(
+            spec = ModelCatalog.QWEN3_0_6B_INT4,
+            telemetry = watchTelemetry
+        )
+        assertThat(watchCandidates).containsExactly(4096, 2048).inOrder()
+
+        // 4GB Smartwatch with VLM (SmolVLM2-500M) balances visual tensors and context
+        val vlmCandidates = LiteRtModelGalleryManager.determineCandidateTokenLimits(
+            spec = ModelCatalog.SMOLVLM2_500M_INSTRUCT,
+            telemetry = watchTelemetry
+        )
+        assertThat(vlmCandidates).containsExactly(4096, 2048).inOrder()
+
+        // 3GB RAM device / moderate headroom
+        val midRangeTelemetry = DeviceMemoryTelemetry(
+            physicalTotalMb = 2900L,
+            memAvailableMb = 800L
+        )
+        val midRangeCandidates = LiteRtModelGalleryManager.determineCandidateTokenLimits(
+            spec = ModelCatalog.QWEN3_0_6B_INT4,
+            telemetry = midRangeTelemetry
+        )
+        assertThat(midRangeCandidates).containsExactly(4096, 2048).inOrder()
+
+        // Low-RAM or constrained device
+        val constrainedTelemetry = DeviceMemoryTelemetry(
+            physicalTotalMb = 2000L,
+            memAvailableMb = 400L
+        )
+        val lowCandidates = LiteRtModelGalleryManager.determineCandidateTokenLimits(
+            spec = ModelCatalog.QWEN3_0_6B_INT4,
+            telemetry = constrainedTelemetry
+        )
+        assertThat(lowCandidates).containsExactly(2048, 1024).inOrder()
     }
 }

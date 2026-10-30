@@ -4,6 +4,7 @@ import dev.engram.edge.agent.PendingConfirmation
 import dev.engram.edge.cloud.LiveBurstStatus
 import dev.engram.edge.data.memory.HybridMemoryResult
 import dev.engram.edge.edge.DeviceMemoryTelemetry
+import dev.engram.edge.edge.EdgeModelRole
 import dev.engram.edge.edge.EdgeModelSpec
 import dev.engram.edge.edge.GalleryRuntimeState
 import dev.engram.edge.edge.ModelCatalog
@@ -224,7 +225,12 @@ fun EngramEdgeDeckContent(
         ) {
             TelemetryHudPill(
                 memory = memory,
-                activeModelShort = gallery.selectedSpec.shortBadge,
+                activeModelShort = if (gallery.loadedSpec != null) {
+                    val tokenK = if (gallery.activeMaxTokens >= 1024) "${gallery.activeMaxTokens / 1024}k" else "${gallery.activeMaxTokens}t"
+                    "${gallery.loadedSpec.shortBadge} [$tokenK]"
+                } else {
+                    gallery.selectedSpec.shortBadge
+                },
                 tierBadge = uiState.executedTierBadge,
                 sysOneLatencyMs = lastDecision?.latencyMs,
                 isOnlineSimulated = uiState.isOnlineMode,
@@ -1114,6 +1120,18 @@ private fun EdgeModelGalleryCard(
                     color = EngramColors.TextMuted
                 )
 
+                if (item.spec.role != EdgeModelRole.EMBEDDING) {
+                    Text(
+                        text = if (item.isLoaded) {
+                            "Context: ${gallery.activeMaxTokens} tokens (dynamically allocated)"
+                        } else {
+                            "Adaptive Context: up to 4096 tokens (auto-scaled)"
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (item.isLoaded) EngramColors.EmeraldEdge else EngramColors.CyanCloud
+                    )
+                }
+
                 if (item.downloadProgress != null) {
                     Spacer(Modifier.height(4.dp))
                     LinearProgressIndicator(
@@ -1137,7 +1155,11 @@ private fun EdgeModelGalleryCard(
                         )
                     ) {
                         Text(
-                            text = if (item.isLoaded) "ACTIVE IN RAM" else "ACTIVATE ON WRIST",
+                            text = if (item.isLoaded) {
+                                "ACTIVE IN RAM • ${gallery.activeMaxTokens} TOKENS"
+                            } else {
+                                "ACTIVATE ON WRIST"
+                            },
                             style = MaterialTheme.typography.labelLarge
                         )
                     }

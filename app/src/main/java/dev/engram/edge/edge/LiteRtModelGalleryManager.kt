@@ -42,6 +42,7 @@ data class ModelInstallStatus(
 data class GalleryRuntimeState(
     val selectedSpec: EdgeModelSpec = ModelCatalog.QWEN3_0_6B_INT4,
     val loadedSpec: EdgeModelSpec? = null,
+    val activeMaxTokens: Int = 2048,
     val isInitializing: Boolean = false,
     val isBusyGenerating: Boolean = false,
     val preferGpuVision: Boolean = false,
@@ -132,26 +133,71 @@ class LiteRtModelGalleryManager(
                     _state.value.preferGpuVision -> Backend.GPU()
                     else -> Backend.CPU()
                 }
-                val config = EngineConfig(
-                    modelPath = file.absolutePath,
-                    backend = Backend.CPU(),
-                    visionBackend = visionBackend,
-                    maxNumTokens = 2048, // Expanded KV-cache context window for Qwen3-0.6B
-                    maxNumImages = if (spec.supportsVision) 1 else null,
-                    cacheDir = context.cacheDir.absolutePath
-                )
-                val initialized = Engine(config).also { it.initialize() }
-                engine = initialized
+
+                val currentMem = residencyMonitor.refreshNow()
+                val candidateTokenLimits = determineCandidateTokenLimits(spec, currentMem)
+                var initializedEngine: Engine? = null
+                var initializedConversation: Conversation? = null
+                var negotiatedTokens = candidateTokenLimits.lastOrNull() ?: 2048
+                var lastCandidateError: Throwable? = null
+
+                for (candidateTokens in candidateTokenLimits) {
+                    var candidateEngine: Engine? = null
+                    var candidateConversation: Conversation? = null
+                    try {
+                        val config = EngineConfig(
+                            modelPath = file.absolutePath,
+                            backend = Backend.CPU(),
+                            visionBackend = visionBackend,
+                            maxNumTokens = candidateTokens,
+                            maxNumImages = if (spec.supportsVision) 1 else null,
+                            cacheDir = context.cacheDir.absolutePath
+                        )
+                        val engineCandidate = Engine(config)
+                        candidateEngine = engineCandidate
+                        engineCandidate.initialize()
+
+                        val convCandidate = engineCandidate.createConversation(
+                            ConversationConfig(
+                                systemInstruction = Contents.of(systemInstruction),
+                                samplerConfig = SamplerConfig(topK = 20, topP = 0.92, temperature = 0.35)
+                            )
+                        )
+                        candidateConversation = convCandidate
+
+                        initializedEngine = engineCandidate
+                        initializedConversation = convCandidate
+                        negotiatedTokens = candidateTokens
+                        Log.i(
+                            TAG,
+                            "Engine initialized for ${spec.displayName} with maxNumTokens=$candidateTokens " +
+                                "(physicalTotal=${currentMem.physicalTotalMb}MB, avail=${currentMem.memAvailableMb}MB)"
+                        )
+                        break
+                    } catch (t: Throwable) {
+                        lastCandidateError = t
+                        Log.w(
+                            TAG,
+                            "Init attempt with maxNumTokens=$candidateTokens failed for ${spec.displayName}: " +
+                                "${t.message}. Retrying candidate fallback..."
+                        )
+                        runCatching { candidateConversation?.close() }
+                        runCatching { candidateEngine?.close() }
+                    }
+                }
+
+                if (initializedEngine == null || initializedConversation == null) {
+                    throw lastCandidateError ?: IllegalStateException("Failed to initialize engine for ${spec.displayName}")
+                }
+
+                engine = initializedEngine
                 activeSystemInstruction = systemInstruction
-                conversation = initialized.createConversation(
-                    ConversationConfig(
-                        systemInstruction = Contents.of(systemInstruction),
-                        samplerConfig = SamplerConfig(topK = 20, topP = 0.92, temperature = 0.35)
-                    )
-                )
+                conversation = initializedConversation
+
                 _state.update {
                     it.copy(
                         loadedSpec = spec,
+                        activeMaxTokens = negotiatedTokens,
                         isInitializing = false,
                         lastError = null
                     )
@@ -228,8 +274,11 @@ class LiteRtModelGalleryManager(
                 activeConversation.sendMessageAsync(prompt)
             }
 
-            stream.collect { chunk ->
-                emit(chunk.toString())
+            stream.collect { msg ->
+                val text = msg.contents.contents.filterIsInstance<Content.Text>().joinToString("") { it.text }
+                if (text.isNotEmpty()) {
+                    emit(text)
+                }
             }
         } catch (e: CancellationException) {
             throw e
@@ -325,7 +374,14 @@ class LiteRtModelGalleryManager(
         conversation = null
         runCatching { engine?.close() }
         engine = null
-        _state.update { it.copy(loadedSpec = null, isInitializing = false, isBusyGenerating = false) }
+        _state.update {
+            it.copy(
+                loadedSpec = null,
+                activeMaxTokens = 2048,
+                isInitializing = false,
+                isBusyGenerating = false
+            )
+        }
     }
 
     private fun updateDownloadProgress(specId: String, progress: Float?) {
@@ -355,5 +411,35 @@ class LiteRtModelGalleryManager(
         const val DEFAULT_SYSTEM_PROMPT =
             "You are EngramEdge, a concise multimodal personal assistant running on a 4GB Android 15 device. " +
                 "Answer strictly from GROUNDED_MEMORIES when answering personal questions, keep replies under 3 short sentences for a micro-display, and invoke tools accurately when requested."
+
+        /**
+         * Dynamically determines candidate KV-cache context token budgets based on real hardware LPDDR RAM
+         * and instantaneous available headroom sampled via `/proc/meminfo`.
+         *
+         * LiteRT-LM static compiled models (such as Qwen3-0.6B) enforce a hard compiled maximum of 4096 tokens
+         * (`llm_litert_compiled_model_executor: max_num_tokens > 4096 triggers model limit clamp`).
+         * For 4GB devices with >1GB headroom, we scale to the maximum 4096 tokens, falling back to 2048 if RAM is constrained.
+         */
+        fun determineCandidateTokenLimits(
+            spec: EdgeModelSpec,
+            telemetry: DeviceMemoryTelemetry
+        ): List<Int> {
+            val target = when {
+                // VLMs allocate large visual projection and image patch tensors (~100-200MB)
+                spec.supportsVision -> {
+                    if (telemetry.physicalTotalMb >= 3500L && telemetry.memAvailableMb >= 1200L) 4096 else 2048
+                }
+                // Device with >= 3.5GB RAM and >= 1000MB available headroom (e.g. 4GB smartwatch with ~1.5GB free)
+                telemetry.physicalTotalMb >= 3500L && telemetry.memAvailableMb >= 1000L -> 4096
+                // 3GB RAM / moderate memory headroom
+                telemetry.physicalTotalMb >= 2500L && telemetry.memAvailableMb >= 600L -> 4096
+                else -> 2048
+            }
+
+            return when (target) {
+                4096 -> listOf(4096, 2048)
+                else -> listOf(2048, 1024)
+            }
+        }
     }
 }
