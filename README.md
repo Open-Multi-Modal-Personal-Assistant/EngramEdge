@@ -1,10 +1,10 @@
 # EngramEdge
 
-In neuroscience, an **engram** is the physical trace of a memory in the brain. We built **Engram Edge** to give Android devices a private, zero-latency multimodal memory that fits entirely inside a strict 4GB RAM budget.
+In neuroscience, an **engram** is the physical substrate of a memory trace in neural tissue. **EngramEdge** brings this concept to Android edge devices—delivering a private, zero-latency multimodal memory vault and hybrid agentic assistant tailored for strict 4GB RAM budgets on tiny phones and Full Android Watches.
 
-Instead of sending every voice note, photo, or question to the cloud, Engram Edge uses **EmbeddingGemma 2** on **LiteRT-LM** to compress memories into **256-dimensional Matryoshka** vectors stored locally in **ObjectBox**. When you ask a question or trigger an action, a fast System One classifier evaluates intent and safety in under 30 milliseconds. Orchestrated by **JetBrains Koog**, routine memory Q&A and native Android skills run 100% offline on **Gemma 3 270M**, while complex real-time video assistance and Google Maps grounding seamlessly escalate to Firebase AI Logic when online.
+Instead of sending every voice memo, camera snapshot, or personal inquiry to the cloud, EngramEdge fuses **EmbeddingGemma 2** (256-dimensional Matryoshka vectors) in **ObjectBox 6 HNSW** with **Android 15 AppSearch BM25F** for instant, offline hybrid recall. A zero-marginal-RAM **System-1 router** evaluates intent and adversarial safety in under 30 milliseconds. Orchestrated by **JetBrains Koog** and powered locally by compact **LiteRT-LM** models (including **Qwen3-0.6B**, **FunctionGemma 270M**, and **Gemma 3 270M**), routine memory Q&A, OS-level **Jetpack AppFunctions**, and native hardware skills run 100% offline. When complex real-time camera assistance or spatial Google Maps grounding is requested, the agent seamlessly escalates to **Firebase AI Logic** via **Gemini 3.8 Flash**.
 
-package ID **`dev.engram.edge`**
+<!-- Package ID: dev.engram.edge -->
 
 ---
 
@@ -27,6 +27,6 @@ package ID **`dev.engram.edge`**
 | **Orchestrator** | JetBrains Koog 1.3.0 + KV History Compression | Progressive `SKILL.md` tool disclosure and seamless edge-to-cloud hot-swapping |
 | **Cross-Component AppState** | Jetpack AppState (`StateStore` + `PersistToDataStore` + `Transform`) | Syncs foreground UI with headless `AppFunctionService` & derives HUD projections off the UI thread |
 | **Sensor & Health Bridge** | 3-Tier `BetterHealthTrackerBridge` (TraX V2 `ContentProvider` + native Sensor 21) | Zero-PPG LED battery drain with immediate sensor release |
-| **Cloud Escalation** | Firebase AI Logic (`firebase-ai`) + Firebase App Check | Gemini 3.1 Live 1 fps streaming & Gemini 3 Flash Google Maps grounding with zero Cloud Functions |
+| **Cloud Escalation** | Firebase AI Logic (`firebase-ai`) + Firebase App Check | Gemini 3.8 Flash Live 1 fps streaming & Google Maps grounding with zero Cloud Functions |
 
 
