@@ -18,6 +18,7 @@ litert = "2.3.0"
 objectbox = "6.0.0-beta3"
 appsearch = "1.1.0"
 appfunctions = "1.0.0-beta01"
+appstate = "1.0.0-alpha01"
 firebaseBom = "35.1.0"
 googleServices = "4.4.4"
 camerax = "1.6.2"
@@ -72,6 +73,12 @@ androidx-appsearch-platform-storage = { group = "androidx.appsearch", name = "ap
 androidx-appsearch-local-storage = { group = "androidx.appsearch", name = "appsearch-local-storage", version.ref = "appsearch" }
 androidx-appfunctions = { group = "androidx.appfunctions", name = "appfunctions", version.ref = "appfunctions" }
 androidx-appfunctions-compiler = { group = "androidx.appfunctions", name = "appfunctions-compiler", version.ref = "appfunctions" }
+
+# Jetpack AppState (StateStore + DataStore Persistence + Headless Compose Transform)
+androidx-appstate-statestore = { group = "androidx.appstate.statestore", name = "statestore", version.ref = "appstate" }
+androidx-appstate-statestore-datastore = { group = "androidx.appstate.statestore", name = "statestore-datastore", version.ref = "appstate" }
+androidx-appstate-transform = { group = "androidx.appstate.transform", name = "transform", version.ref = "appstate" }
+androidx-appstate-transform-testing = { group = "androidx.appstate.transform", name = "transform-testing", version.ref = "appstate" }
 
 # Firebase AI Logic (BoM 35.1.0 - Zero Cloud Functions)
 firebase-bom = { group = "com.google.firebase", name = "firebase-bom", version.ref = "firebaseBom" }

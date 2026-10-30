@@ -19,17 +19,17 @@ EngramEdge is designed specifically for ~2.0"–2.4" micro-displays (`sw360dp`�
 
 | Card | Primary Function | Primary Touch Affordance |
 | :--- | :--- | :--- |
-| **`ENGRAM`** | Memory Vault Q&A & Voice Memo Ingestion | **80dp Push-to-Talk Button** (Hold to speak, release to query or record) |
-| **`SNAP`** | Visual Memory & Document OCR Ingestion | **80dp Camera Shutter** (Tap to snapshot text, barcodes, or scene) |
-| **`LIVE`** | Gemini Live Multimodal Assistant | **Bidirectional Stream Button** (1 fps camera frames + streaming voice) |
-| **`MODELS`** | Model Gallery, Telemetry & Residency Controls | **One-Tap Model Cards** (Switch between Gemma 3, Qwen3, or SmolVLM) |
+| **`ASK`** | Memory Vault Q&A & Voice Memo Ingestion | **80dp Push-to-Talk Button** (Tap/hold to speak, or tap quick prompt chips) |
+| **`SNAP`** | Visual Memory & Document OCR Ingestion | **80dp Camera Shutter** (Tap to snapshot text/scene + synthetic Prompt-Shield tests) |
+| **`LIVE`** | Gemini 3.1 Live Multimodal Assistant | **Bidirectional Stream Button** (1 fps camera frames + voice queries) |
+| **`MODELS`** | Model Gallery, HF Token & Residency Controls | **One-Tap Model Cards** (Switch between Qwen3-0.6B, FunctionGemma, Gemma 3, or SmolVLM2) |
 
-### Top Telemetry HUD Pill (`TelemetryHudPill`)
-The top bar persistently displays real-time hardware diagnostics:
-* **Time & Battery Percentage**
-* **Resident Memory (PSS / MemAvailable):** e.g., `812MB/1.4GB`
-* **Active Model:** e.g., `Gemma3-270M`
-* **Network Status & Residency Mode:** `HYBRID (CO-RES)` or `OFFLINE`
+### Top Telemetry HUD Pill (`TelemetryHudPill` via Jetpack AppState)
+The top bar persistently displays a headless `@Composable` projection (`androidx.appstate.transform`) computed off the UI thread:
+* **Residency Policy & App PSS RAM:** e.g., `CO-RES • 685MB PSS`
+* **Active Model & Dynamic KV Context Window:** e.g., `Qwen3-0.6B [4k]`
+* **System-1 Latency & External AppFunctions Counter:** e.g., `• S1 14ms • AF#2` when OS-level Android 16+ `AppFunctions` query or store memories in the background
+* **Persisted Connectivity Toggle:** One-tap `HYBRID` ↔ `AIRPLANE` switch persisted across process death via Jetpack AppState (`PersistToDataStore`), alongside preferred model selection and latest vault bookmark (`Snap #<id>?`)
 
 ---
 

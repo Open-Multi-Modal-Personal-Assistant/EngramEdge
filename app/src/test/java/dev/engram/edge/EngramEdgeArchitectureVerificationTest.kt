@@ -1,19 +1,41 @@
 package dev.engram.edge
 
+import androidx.appstate.transform.testing.transformTest
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.snapshots.Snapshot
+import com.google.common.truth.Truth.assertThat
 import dev.engram.edge.data.memory.HybridSearchMath
 import dev.engram.edge.data.memory.MemoryChunkEntity
 import dev.engram.edge.edge.DeviceMemoryTelemetry
 import dev.engram.edge.edge.EmbeddingGemmaEngine
+import dev.engram.edge.edge.GalleryRuntimeState
 import dev.engram.edge.edge.LiteRtModelGalleryManager
 import dev.engram.edge.edge.ModelCatalog
+import dev.engram.edge.edge.ResidencyMode
 import dev.engram.edge.router.AgentRoute
+import dev.engram.edge.router.ChoiceDecision
+import dev.engram.edge.router.ComplexityLevel
 import dev.engram.edge.router.ExecutionGate
+import dev.engram.edge.router.NoulDecision
+import dev.engram.edge.router.ScoreDecision
+import dev.engram.edge.router.SystemOneDecision
 import dev.engram.edge.router.SystemOneDecisionEngine
 import dev.engram.edge.security.PromptInjectionShield
 import dev.engram.edge.skills.AndroidSkillExecutor
 import dev.engram.edge.skills.FawHealthSnapshot
-import com.google.common.truth.Truth.assertThat
+import dev.engram.edge.state.EngramAppStateCoordinator
+import dev.engram.edge.state.launchHudProjectionForTest
+import java.io.File
+import java.nio.file.Files
 import kotlin.math.sqrt
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertThrows
 import org.junit.Test
 
@@ -314,5 +336,182 @@ class EngramEdgeArchitectureVerificationTest {
         assertThat(eg2Chunk.embeddingModelId).isEqualTo("embeddinggemma-2-text-vision-440m")
 
         assertThat(simHashChunk.embeddingModelId).isNotEqualTo(eg2Chunk.embeddingModelId)
+    }
+
+    @Test
+    fun appStateCoordinator_synchronizesCrossComponentStateAcrossProducers() {
+        val coordinator = EngramAppStateCoordinator()
+
+        assertThat(coordinator.preferences.value.isOnlineMode).isTrue()
+        coordinator.toggleOnlineMode()
+        coordinator.setPreferGpuVision(true)
+        coordinator.setPreferredModelId(ModelCatalog.GEMMA3_270M_IT.id)
+
+        assertThat(coordinator.preferences.value.isOnlineMode).isFalse()
+        assertThat(coordinator.preferences.value.preferGpuVision).isTrue()
+        assertThat(coordinator.preferences.value.preferredModelId).isEqualTo("gemma3-270m-it")
+
+        coordinator.recordVaultBookmark(memoryId = 77L, memoryTitle = "Locker Code #42", totalCount = 5)
+        assertThat(coordinator.vaultBookmark.value.lastStoredMemoryId).isEqualTo(77L)
+        assertThat(coordinator.vaultBookmark.value.lastStoredMemoryTitle).isEqualTo("Locker Code #42")
+        assertThat(coordinator.vaultBookmark.value.totalIndexedMemories).isEqualTo(5)
+
+        val vitals = FawHealthSnapshot(
+            providerSource = "TraX V2 ContentProvider",
+            heartRateBpm = 71,
+            spo2Percent = 99,
+            stepsToday = 6120
+        )
+        coordinator.recordVitalsSnapshot(vitals, nowMillis = 1760000000000L)
+        assertThat(coordinator.cachedVitals.value.heartRateBpm).isEqualTo(71)
+        assertThat(coordinator.cachedVitals.value.spo2Percent).isEqualTo(99)
+        assertThat(coordinator.cachedVitals.value.stepsToday).isEqualTo(6120)
+
+        coordinator.setTorchActive(true)
+        coordinator.recordExternalAppFunctionCall("saveMemoryNote", "saved 'Locker Code #42'")
+        assertThat(coordinator.runtimeStatus.value.isTorchActive).isTrue()
+        assertThat(coordinator.runtimeStatus.value.lastAppFunctionName).isEqualTo("saveMemoryNote")
+        assertThat(coordinator.runtimeStatus.value.appFunctionCallCount).isEqualTo(1)
+    }
+
+    @Test
+    fun appStateCoordinator_persistsAndRestoresAcrossSimulatedProcessDeathViaDataStore() = runBlocking {
+        val tempDir = Files.createTempDirectory("engram_appstate_test").toFile()
+        val storageFile = File(tempDir, "datastore/engram_appstate.json")
+
+        try {
+            // Process 1: Start DataStore sync, mutate persisted & ephemeral keys
+            val scope1 = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+            val processOneCoordinator = EngramAppStateCoordinator()
+            scope1.launch {
+                processOneCoordinator.syncWithDataStoreFile(storageFile, scope1)
+            }
+
+            delay(150)
+            processOneCoordinator.setOnlineMode(false)
+            processOneCoordinator.setPreferGpuVision(true)
+            processOneCoordinator.setPreferredModelId(ModelCatalog.GEMMA3_270M_IT.id)
+            processOneCoordinator.recordVaultBookmark(memoryId = 88L, memoryTitle = "Garage Level P3", totalCount = 9)
+            processOneCoordinator.recordVitalsSnapshot(
+                FawHealthSnapshot(
+                    providerSource = "Android Sensor.TYPE_HEART_RATE",
+                    heartRateBpm = 68,
+                    spo2Percent = 97,
+                    stepsToday = 3400
+                ),
+                nowMillis = 1760000123000L
+            )
+            // Ephemeral runtime state must NOT be persisted across process death
+            processOneCoordinator.setTorchActive(true)
+            processOneCoordinator.recordExternalAppFunctionCall("readWristVitals", "68 BPM")
+            Snapshot.sendApplyNotifications()
+
+            withTimeout(5_000L) {
+                while (!storageFile.exists() || !storageFile.readText().contains("Garage Level P3")) {
+                    Snapshot.sendApplyNotifications()
+                    delay(50)
+                }
+            }
+            scope1.cancel()
+            delay(100)
+
+            // Process 2: Brand-new coordinator restores PersistToDataStore keys from disk
+            val scope2 = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+            val processTwoCoordinator = EngramAppStateCoordinator()
+            scope2.launch {
+                processTwoCoordinator.syncWithDataStoreFile(storageFile, scope2)
+            }
+
+            withTimeout(5_000L) {
+                while (processTwoCoordinator.vaultBookmark.value.lastStoredMemoryId != 88L ||
+                    processTwoCoordinator.preferences.value.isOnlineMode ||
+                    processTwoCoordinator.cachedVitals.value.heartRateBpm != 68
+                ) {
+                    Snapshot.sendApplyNotifications()
+                    delay(50)
+                }
+            }
+
+            assertThat(processTwoCoordinator.preferences.value.isOnlineMode).isFalse()
+            assertThat(processTwoCoordinator.preferences.value.preferGpuVision).isTrue()
+            assertThat(processTwoCoordinator.preferences.value.preferredModelId).isEqualTo("gemma3-270m-it")
+            assertThat(processTwoCoordinator.vaultBookmark.value.lastStoredMemoryTitle).isEqualTo("Garage Level P3")
+            assertThat(processTwoCoordinator.vaultBookmark.value.totalIndexedMemories).isEqualTo(9)
+            assertThat(processTwoCoordinator.cachedVitals.value.heartRateBpm).isEqualTo(68)
+            assertThat(processTwoCoordinator.cachedVitals.value.spo2Percent).isEqualTo(97)
+
+            // Verify ephemeral runtime keys reset cleanly on fresh process start
+            assertThat(processTwoCoordinator.runtimeStatus.value.isTorchActive).isFalse()
+            assertThat(processTwoCoordinator.runtimeStatus.value.appFunctionCallCount).isEqualTo(0)
+
+            scope2.cancel()
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun hudStateTransformer_derivesHeadlessBannerProjectionViaTransformTest() = transformTest {
+        val coordinator = EngramAppStateCoordinator()
+        val memoryState = mutableStateOf(
+            DeviceMemoryTelemetry(
+                physicalTotalMb = 3923L,
+                memAvailableMb = 1520L,
+                appPssMb = 640L,
+                residencyMode = ResidencyMode.CO_RESIDENT
+            )
+        )
+        val galleryState = mutableStateOf(
+            GalleryRuntimeState(
+                selectedSpec = ModelCatalog.QWEN3_0_6B_INT4,
+                loadedSpec = ModelCatalog.QWEN3_0_6B_INT4,
+                activeMaxTokens = 4096
+            )
+        )
+        val decisionState = mutableStateOf<SystemOneDecision?>(null)
+
+        val tScope = TransformScope()
+        val hudState = tScope.launchHudProjectionForTest(
+            coordinator = coordinator,
+            memoryState = memoryState,
+            galleryState = galleryState,
+            decisionState = decisionState
+        )
+        backgroundScope.launch(testDispatcher) { tScope.run() }
+        advance()
+
+        assertThat(hudState.value.connectivityBadge).isEqualTo("HYBRID")
+        assertThat(hudState.value.activeModelLabel).isEqualTo("Qwen3-0.6B [4k]")
+        assertThat(hudState.value.primaryTelemetryLine).isEqualTo("CO-RES • 640MB PSS • Qwen3-0.6B [4k]")
+        assertThat(hudState.value.externalAgentBadge).isNull()
+
+        // Mutate cross-component StateStore + System-1 telemetry and advance headless composition
+        coordinator.toggleOnlineMode()
+        coordinator.recordExternalAppFunctionCall("searchMemories", "2 hits for 'parking'")
+        memoryState.value = memoryState.value.copy(
+            appPssMb = 790L,
+            residencyMode = ResidencyMode.AUTO_SWAP_ON_DEMAND
+        )
+        decisionState.value = SystemOneDecision(
+            routeChoice = ChoiceDecision(
+                selected = AgentRoute.LOCAL_MEMORY_RAG,
+                maxProbability = 0.94f,
+                distribution = mapOf(AgentRoute.LOCAL_MEMORY_RAG to 0.94f)
+            ),
+            complexityScore = ScoreDecision(level = ComplexityLevel.LOW, normalizedScore = 0.15f),
+            safetyNoul = NoulDecision(value = true, truthProbability = 0.99f),
+            gate = ExecutionGate.AUTO_EXECUTE_LOCAL,
+            latencyMs = 14L,
+            routerBackend = "SimHash-256d"
+        )
+        Snapshot.sendApplyNotifications()
+        advance()
+
+        assertThat(hudState.value.isOnlineMode).isFalse()
+        assertThat(hudState.value.connectivityBadge).isEqualTo("AIRPLANE")
+        assertThat(hudState.value.primaryTelemetryLine)
+            .isEqualTo("AUTO-SWAP • 790MB PSS • Qwen3-0.6B [4k] • S1 14ms • AF#1")
+        assertThat(hudState.value.externalAgentBadge)
+            .isEqualTo("AppFn: searchMemories (2 hits for 'parking')")
     }
 }

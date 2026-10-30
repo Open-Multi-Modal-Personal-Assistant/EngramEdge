@@ -10,6 +10,7 @@ import com.google.ai.edge.litertlm.ConversationConfig
 import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
 import com.google.ai.edge.litertlm.SamplerConfig
+import dev.engram.edge.state.EngramAppStateCoordinator
 import java.io.File
 import java.io.FileOutputStream
 import java.util.concurrent.Executors
@@ -63,7 +64,8 @@ data class GalleryRuntimeState(
 class LiteRtModelGalleryManager(
     private val context: Context,
     private val residencyMonitor: AdaptiveResidencyMonitor,
-    private val embeddingEngine: EmbeddingGemmaEngine
+    private val embeddingEngine: EmbeddingGemmaEngine,
+    private val appState: EngramAppStateCoordinator? = null
 ) {
     private val executor = Executors.newSingleThreadExecutor()
     private val engineDispatcher = executor.asCoroutineDispatcher()
@@ -109,6 +111,7 @@ class LiteRtModelGalleryManager(
 
         mutex.withLock {
             _state.update { it.copy(selectedSpec = spec, lastError = null) }
+            appState?.setPreferredModelId(spec.id)
             val file = ModelCatalog.resolveInstalledFile(context, spec)
             if (file == null) {
                 refreshCatalogStatuses()
@@ -373,6 +376,23 @@ class LiteRtModelGalleryManager(
 
     fun setPreferGpuVision(enabled: Boolean) {
         _state.update { it.copy(preferGpuVision = enabled) }
+        appState?.setPreferGpuVision(enabled)
+    }
+
+    fun syncFromPersistedPreferences(preferGpuVision: Boolean, preferredModelId: String) {
+        val matchedSpec = ModelCatalog.ALL_MODELS.firstOrNull {
+            it.id == preferredModelId && it.role != EdgeModelRole.EMBEDDING
+        }
+        _state.update { current ->
+            current.copy(
+                preferGpuVision = preferGpuVision,
+                selectedSpec = if (current.loadedSpec == null && matchedSpec != null) {
+                    matchedSpec
+                } else {
+                    current.selectedSpec
+                }
+            )
+        }
     }
 
     suspend fun unloadActiveModel() = withContext(engineDispatcher) {

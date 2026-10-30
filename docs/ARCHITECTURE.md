@@ -293,24 +293,71 @@ Full Android Watches (FAWs) feature optical Photoplethysmography (PPG) sensors t
 ## 8. Cloud Escalation with Firebase AI Logic (Zero Cloud Functions)
 
 When connectivity is available and tasks require open-world reasoning, live camera assistance, or spatial maps grounding, EngramEdge escalates to **Firebase AI Logic** (`com.google.firebase:firebase-ai`):
-* **No STTSFunctions:** Replaces legacy Cloud Functions with direct client-side Firebase AI Logic SDK calls.
+* **No Cloud Functions:** Replaces legacy Cloud Run / Cloud Functions proxies with direct client-side Firebase AI Logic SDK calls.
 * **Firebase App Check (Play Integrity):** Secures all API calls against unauthorized access and API key scraping.
-* **Gemini Live Multimodal Session:** Streams throttled 1 fps CameraX frames and microphone audio for live visual assistant queries.
-* **Google Maps Grounding (`TemplateTool`):** Enriches local search queries with real-time latitude, longitude, and opening hours.
-* **Speech Pipeline:** Uses Gemini TTS when connected; falls back immediately to on-device Android `SpeechRecognizer` and `TextToSpeech` when offline.
+* **Gemini 3.8 Flash Live Multimodal Session (`gemini-3.8-flash`):** Streams throttled 1 fps CameraX frames and voice prompts for live visual assistant queries.
+* **Gemini 3.8 Flash + Google Maps Grounding (`gemini-3.8-flash`):** Enriches spatial search queries with grounded local places and open-world knowledge.
+* **Speech Pipeline:** Uses device TTS/STT seamlessly across online and airplane-offline modes.
 
 ---
 
-## 9. Dependency & Tooling Matrix
+## 9. Cross-Component State & Headless Projection (Jetpack AppState)
+
+Because EngramEdge operates simultaneously through a foreground Jetpack Compose UI (`MainActivity` / `EngramEdgeViewModel`) and headless Android 16+ OS entry points (`BaseEngramAppFunctionService`), relying solely on UI-scoped `ViewModel` flows leaves background agent mutations invisible to the UI and loses user preferences under `lmkd` process reclamation on 4 GB hardware.
+
+EngramEdge integrates **Jetpack AppState (`androidx.appstate` 1.0.0-alpha01)** via `EngramAppStateCoordinator`:
+
+```
+  ┌──────────────────────────┐        ┌──────────────────────────────────┐
+  │ BaseEngramAppFunctionSvc │        │  Domain & Hardware Bridges       │
+  │ • searchMemories         │        │  • HybridMemoryRepository        │
+  │ • saveMemoryNote         │        │  • BetterHealthTrackerBridge     │
+  │ • readWristVitals        │        │  • LiteRtModelGalleryManager     │
+  └────────────┬─────────────┘        └─────────────────┬────────────────┘
+               │  updateState / setState                │
+               ▼                                        ▼
+  ┌──────────────────────────────────────────────────────────────────────┐
+  │             EngramAppStateCoordinator (Jetpack StateStore)           │
+  │  • EdgePreferencesKey   (@Serializable, PersistToDataStore)          │
+  │  • VaultBookmarkKey     (@Serializable, PersistToDataStore)          │
+  │  • CachedVitalsKey      (@Serializable, PersistToDataStore)          │
+  │  • ProcessSharedRuntimeKey (Ephemeral: torch & AppFunction counters) │
+  └───────────────────┬───────────────────────────────┬──────────────────┘
+                      │ syncToDataStore               │ Snapshot State<T>
+                      ▼                               ▼
+     ┌────────────────────────────────┐  ┌───────────────────────────────┐
+     │ JSON DataStore Persistence     │  │ Headless AppState Transform   │
+     │ files/datastore/engram_appstate│  │ @Composable off UI thread     │
+     │ Survives LMKD process death    │  │ -> State<HudBannerProjection> │
+     └────────────────────────────────┘  └───────────────┬───────────────┘
+                                                         │
+                                                         ▼
+                                         ┌───────────────────────────────┐
+                                         │   Compose TelemetryHudPill    │
+                                         │ CO-RES • 685MB • Qwen3 [4k]   │
+                                         └───────────────────────────────┘
+```
+
+### Key Architectural Guarantees
+1. **Encapsulated `StateStoreKey<T>` Ownership:** All `StateStoreKey` objects (`EdgePreferencesKey`, `VaultBookmarkKey`, `CachedVitalsKey`, `ProcessSharedRuntimeKey`) are `private` inside `EngramAppStateCoordinator`, enforcing unidirectional mutations through typed domain methods while exposing Compose `State<T>` snapshots to any reader in the process.
+2. **Automatic Process-Death Persistence (`PersistToDataStore`):** Implementing `PersistToDataStore` on `@Serializable` keys and binding `stateStore.syncToDataStore(...)` in `EngramEdgeApplication.onCreate()` persists `HYBRID`/`AIRPLANE` mode, auto-speak, preferred LiteRT-LM model ID, GPU vision preference, latest stored vault bookmark, and cached wrist vitals across OS process death without manual `SharedPreferences` boilerplate.
+3. **Strict Credential & Binary Boundaries:** High-entropy secrets (the HuggingFace Bearer token) remain strictly inside Android Keystore AES-256-GCM (`EncryptedTokenStore`) and are never serialized into `StateStore` JSON; raw CameraX JPEG byte arrays remain ephemeral in memory.
+4. **Headless `@Composable` HUD Derivation (`androidx.appstate.transform`):** `HudStateTransformer` runs `transform(...)` on `Dispatchers.Default`, fusing `StateStore` Compose snapshot states with high-frequency `StateFlow`s (`DeviceMemoryTelemetry`, `GalleryRuntimeState`, `SystemOneDecision`) outside the UI composition tree and enabling fast JVM unit testing via `transformTest`.
+
+---
+
+## 10. Dependency & Tooling Matrix
 
 | Component | Maven Artifact / Plugin | Target Version |
 | :--- | :--- | :--- |
 | **Android Gradle Plugin** | `com.android.application` | `9.4.1` |
 | **Kotlin & KSP** | `org.jetbrains.kotlin.*` / `ksp` | `2.3.10` / `2.3.12` |
 | **Jetpack Compose** | `androidx.compose:compose-bom` | `2026.09.00` |
+| **Jetpack AppState** | `androidx.appstate:statestore*` / `transform*` | `1.0.0-alpha01` |
 | **LiteRT-LM** | `com.google.ai.edge.litertlm:litertlm-android` | `0.18.0` |
 | **LiteRT V2 (`CompiledModel`)** | `com.google.ai.edge.litert:litert` (+ `gpu`) | `2.3.0` |
 | **JetBrains Koog** | `ai.koog:koog-agents` + `ai.koog:skills` | `1.3.0` + `1.3.0-beta` |
 | **ObjectBox** | `io.objectbox:objectbox-kotlin` / `android` | `6.0.0-beta3` |
 | **Jetpack AppSearch & AppFunctions** | `androidx.appsearch:*` / `androidx.appfunctions:*` | `1.1.0` / `1.0.0-beta01` |
 | **Firebase BoM** | `com.google.firebase:firebase-bom` | `35.1.0` |
+

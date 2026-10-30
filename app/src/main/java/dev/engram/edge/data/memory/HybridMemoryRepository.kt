@@ -3,6 +3,7 @@ package dev.engram.edge.data.memory
 import dev.engram.edge.edge.EmbeddingGemmaEngine
 import dev.engram.edge.security.PromptInjectionShield
 import dev.engram.edge.security.ShieldVerdict
+import dev.engram.edge.state.EngramAppStateCoordinator
 import io.objectbox.Box
 import io.objectbox.BoxStore
 import io.objectbox.query.QueryCondition
@@ -53,7 +54,8 @@ class HybridMemoryRepository(
     boxStore: BoxStore,
     private val appSearchIndex: AppSearchLexicalIndex,
     private val embeddingEngine: EmbeddingGemmaEngine,
-    private val promptShield: PromptInjectionShield
+    private val promptShield: PromptInjectionShield,
+    private val appState: EngramAppStateCoordinator? = null
 ) {
     private val box: Box<MemoryChunkEntity> = boxStore.boxFor(MemoryChunkEntity::class.java)
 
@@ -115,6 +117,11 @@ class HybridMemoryRepository(
         box.put(entity)
         appSearchIndex.putMemory(entity)
         refreshRecentMemories()
+        appState?.recordVaultBookmark(
+            memoryId = entity.id,
+            memoryTitle = entity.title,
+            totalCount = box.count().toInt()
+        )
         IngestionOutcome.Stored(entity)
     }
 
@@ -246,6 +253,7 @@ class HybridMemoryRepository(
             .build()
             .use { it.find(0, 25) }
         _recentMemories.value = latest
+        appState?.updateVaultTotalCount(box.count().toInt())
     }
 
     private fun blendAndNormalize(a: FloatArray, b: FloatArray): FloatArray {

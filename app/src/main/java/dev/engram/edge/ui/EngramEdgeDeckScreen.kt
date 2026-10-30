@@ -86,6 +86,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.engram.edge.audio.SpeechUiState
+import dev.engram.edge.state.HudBannerProjection
 import kotlinx.coroutines.launch
 
 @Composable
@@ -98,6 +99,7 @@ fun EngramEdgeRootScreen(viewModel: EngramEdgeViewModel) {
     val shieldVerdict by viewModel.lastShieldVerdict.collectAsStateWithLifecycle()
     val liveBurst by viewModel.liveBurstStatus.collectAsStateWithLifecycle()
     val speech by viewModel.speechState.collectAsStateWithLifecycle()
+    val hudProjection by viewModel.hudProjection
 
     val context = LocalContext.current
     var hasMicPermission by remember {
@@ -149,6 +151,7 @@ fun EngramEdgeRootScreen(viewModel: EngramEdgeViewModel) {
         lastShieldVerdict = shieldVerdict,
         liveBurst = liveBurst,
         speech = speech,
+        hudProjection = hudProjection,
         hasCameraPermission = hasCameraPermission,
         onToggleOnline = viewModel::toggleOnlineMode,
         onQueryChange = viewModel::updateQueryInput,
@@ -191,6 +194,7 @@ fun EngramEdgeDeckContent(
     liveBurst: LiveBurstStatus,
     speech: SpeechUiState,
     hasCameraPermission: Boolean,
+    hudProjection: HudBannerProjection? = null,
     onToggleOnline: () -> Unit,
     onQueryChange: (String) -> Unit,
     onSubmitQuery: (String?, Boolean) -> Unit,
@@ -226,7 +230,7 @@ fun EngramEdgeDeckContent(
         ) {
             TelemetryHudPill(
                 memory = memory,
-                activeModelShort = if (gallery.loadedSpec != null) {
+                activeModelShort = hudProjection?.activeModelLabel ?: if (gallery.loadedSpec != null) {
                     val tokenK = if (gallery.activeMaxTokens >= 1024) "${gallery.activeMaxTokens / 1024}k" else "${gallery.activeMaxTokens}t"
                     "${gallery.loadedSpec.shortBadge} [$tokenK]"
                 } else {
@@ -235,7 +239,8 @@ fun EngramEdgeDeckContent(
                 tierBadge = uiState.executedTierBadge,
                 sysOneLatencyMs = lastDecision?.latencyMs,
                 isOnlineSimulated = uiState.isOnlineMode,
-                onToggleOnlineMode = onToggleOnline
+                onToggleOnlineMode = onToggleOnline,
+                hudProjection = hudProjection
             )
 
             // Large swipeable/tappable 4-card watch navigation strip

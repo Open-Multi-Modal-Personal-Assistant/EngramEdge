@@ -56,6 +56,10 @@ android {
         buildConfig = true
     }
 
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+    }
+
     packaging {
         resources {
             excludes += setOf(
@@ -117,6 +121,11 @@ dependencies {
     implementation(libs.androidx.appfunctions)
     ksp(libs.androidx.appfunctions.compiler)
 
+    // Jetpack AppState (StateStore + DataStore Persistence + Headless Compose Transform)
+    implementation(libs.androidx.appstate.statestore)
+    implementation(libs.androidx.appstate.statestore.datastore)
+    implementation(libs.androidx.appstate.transform)
+
     // Firebase AI Logic (BoM 35.1.0)
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.ai)
@@ -140,6 +149,7 @@ dependencies {
     testImplementation(libs.junit)
     testImplementation(libs.google.truth)
     testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.androidx.appstate.transform.testing)
 }
 
 configurations.configureEach {

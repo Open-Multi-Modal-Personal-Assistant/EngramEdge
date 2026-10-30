@@ -29,7 +29,7 @@ data class MemoryChunkEntity(
         distanceType = VectorDistanceType.COSINE
     )
     var embedding: FloatArray? = null,
-    @Index var embeddingModelId: String = ""
+    @Index var embeddingModelId: String? = ""
 ) {
     enum class Modality {
         TEXT,

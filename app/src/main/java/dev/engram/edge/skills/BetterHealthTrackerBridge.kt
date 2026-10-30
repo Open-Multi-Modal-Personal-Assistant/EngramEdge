@@ -15,6 +15,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import androidx.core.content.ContextCompat
+import dev.engram.edge.state.EngramAppStateCoordinator
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -109,7 +110,8 @@ data class FawHealthSnapshot(
  *     `65596`, `65598`, `65599`).
  */
 class BetterHealthTrackerBridge(
-    private val context: Context
+    private val context: Context,
+    private val appState: EngramAppStateCoordinator? = null
 ) {
     companion object {
         const val BETTER_HEALTH_PACKAGE = "com.ailife.betterhealth"
@@ -278,6 +280,9 @@ class BetterHealthTrackerBridge(
                 null
             }
         )
+    }.also { snap ->
+        lastSnapshot = snap
+        appState?.recordVitalsSnapshot(snap)
     }
 
     /**

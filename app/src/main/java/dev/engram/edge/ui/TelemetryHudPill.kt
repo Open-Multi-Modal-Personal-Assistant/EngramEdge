@@ -1,6 +1,5 @@
 package dev.engram.edge.ui
 
-import dev.engram.edge.edge.DeviceMemoryTelemetry
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -17,10 +16,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import dev.engram.edge.edge.DeviceMemoryTelemetry
+import dev.engram.edge.state.HudBannerProjection
 
 /**
  * Always-on top telemetry pill displaying live `/proc/meminfo` + PSS RAM residency,
- * active local/cloud model tier, System-1 router latency, and one-tap Offline/Online toggle.
+ * active local/cloud model tier, System-1 router latency, external `AppFunctions` call count,
+ * and one-tap Offline/Online toggle. Consumes pre-computed [HudBannerProjection] derived
+ * headlessly via Jetpack AppState Transform (`androidx.appstate.transform`).
  */
 @Composable
 fun TelemetryHudPill(
@@ -30,14 +33,23 @@ fun TelemetryHudPill(
     sysOneLatencyMs: Long?,
     isOnlineSimulated: Boolean,
     onToggleOnlineMode: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    hudProjection: HudBannerProjection? = null
 ) {
+    val effectiveOnline = hudProjection?.isOnlineMode ?: isOnlineSimulated
     val accentColor = when {
-        !isOnlineSimulated -> EngramColors.EmeraldEdge
+        !effectiveOnline -> EngramColors.EmeraldEdge
         tierBadge.startsWith("CLOUD") -> EngramColors.CyanCloud
         tierBadge.contains("BLOCK") -> EngramColors.CoralDanger
+        hudProjection?.externalAgentBadge != null -> EngramColors.CyanCloud
         else -> EngramColors.EmeraldEdge
     }
+
+    val primaryText = hudProjection?.primaryTelemetryLine ?: run {
+        val sys1Part = sysOneLatencyMs?.let { " • S1 ${it}ms" }.orEmpty()
+        "${memory.residencyMode.badge} • ${memory.appPssMb}MB PSS • $activeModelShort$sys1Part"
+    }
+    val badgeText = hudProjection?.connectivityBadge ?: if (effectiveOnline) "HYBRID" else "AIRPLANE"
 
     val shape = RoundedCornerShape(16.dp)
     Row(
@@ -51,9 +63,8 @@ fun TelemetryHudPill(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        val sys1Part = sysOneLatencyMs?.let { " • S1 ${it}ms" }.orEmpty()
         Text(
-            text = "${memory.residencyMode.badge} • ${memory.appPssMb}MB PSS • $activeModelShort$sys1Part",
+            text = primaryText,
             style = MaterialTheme.typography.labelSmall,
             color = EngramColors.TextPrimary,
             maxLines = 1,
@@ -62,10 +73,11 @@ fun TelemetryHudPill(
         )
 
         Text(
-            text = if (isOnlineSimulated) "HYBRID" else "AIRPLANE",
+            text = badgeText,
             style = MaterialTheme.typography.labelSmall,
             color = accentColor,
             modifier = Modifier.padding(start = 8.dp)
         )
     }
 }
+

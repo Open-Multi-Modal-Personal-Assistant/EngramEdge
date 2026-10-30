@@ -1,5 +1,9 @@
 package dev.engram.edge
 
+import android.app.Application
+import android.content.Context
+import android.util.Log
+import androidx.compose.runtime.snapshotFlow
 import dev.engram.edge.agent.EngramKoogOrchestrator
 import dev.engram.edge.audio.EngramSpeechController
 import dev.engram.edge.cloud.FirebaseAiCloudBridge
@@ -13,11 +17,10 @@ import dev.engram.edge.router.SystemOneDecisionEngine
 import dev.engram.edge.security.PromptInjectionShield
 import dev.engram.edge.skills.AndroidSkillExecutor
 import dev.engram.edge.skills.BetterHealthTrackerBridge
+import dev.engram.edge.state.EngramAppStateCoordinator
 import dev.engram.edge.vision.WatchCameraOcrManager
-import android.app.Application
-import android.content.Context
-import android.util.Log
 import io.objectbox.BoxStore
+import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -26,18 +29,28 @@ import kotlinx.coroutines.launch
 class EngramEdgeContainer(context: Context, val boxStore: BoxStore) {
     private val appContext = context.applicationContext
 
+    val appState = EngramAppStateCoordinator()
     val residencyMonitor = AdaptiveResidencyMonitor()
     val promptShield = PromptInjectionShield(appContext)
     val embeddingEngine = EmbeddingGemmaEngine(appContext, residencyMonitor)
-    val galleryManager = LiteRtModelGalleryManager(appContext, residencyMonitor, embeddingEngine)
+    val galleryManager = LiteRtModelGalleryManager(
+        context = appContext,
+        residencyMonitor = residencyMonitor,
+        embeddingEngine = embeddingEngine,
+        appState = appState
+    )
     val appSearchIndex = AppSearchLexicalIndex(appContext)
-    val betterHealthBridge = BetterHealthTrackerBridge(appContext)
+    val betterHealthBridge = BetterHealthTrackerBridge(
+        context = appContext,
+        appState = appState
+    )
 
     val memoryRepository = HybridMemoryRepository(
         boxStore = boxStore,
         appSearchIndex = appSearchIndex,
         embeddingEngine = embeddingEngine,
-        promptShield = promptShield
+        promptShield = promptShield,
+        appState = appState
     )
 
     val systemOneRouter = SystemOneDecisionEngine(
@@ -50,7 +63,8 @@ class EngramEdgeContainer(context: Context, val boxStore: BoxStore) {
         residencyMonitor = residencyMonitor,
         promptShield = promptShield,
         betterHealthBridge = betterHealthBridge,
-        memoryRepositoryProvider = { memoryRepository }
+        memoryRepositoryProvider = { memoryRepository },
+        appState = appState
     )
 
     val cloudBridge = FirebaseAiCloudBridge(appContext)
@@ -95,6 +109,24 @@ class EngramEdgeApplication : Application() {
         container.residencyMonitor.startMonitoring()
         container.galleryManager.refreshCatalogStatuses()
 
+        // Continuously synchronize Jetpack AppState (`PersistToDataStore` keys) with JSON DataStore
+        val appStateFile = File(filesDir, "datastore/engram_appstate.json")
+        appScope.launch {
+            container.appState.syncWithDataStoreFile(
+                storageFile = appStateFile,
+                scope = appScope
+            )
+        }
+        appScope.launch {
+            snapshotFlow { container.appState.preferences.value }
+                .collect { prefs ->
+                    container.galleryManager.syncFromPersistedPreferences(
+                        preferGpuVision = prefs.preferGpuVision,
+                        preferredModelId = prefs.preferredModelId
+                    )
+                }
+        }
+
         appScope.launch {
             container.skillExecutor.stageAndDiscoverSkills()
             container.embeddingEngine.tryLoadBestAvailableModel()
@@ -105,3 +137,4 @@ class EngramEdgeApplication : Application() {
         }
     }
 }
+

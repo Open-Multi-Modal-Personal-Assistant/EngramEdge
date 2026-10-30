@@ -18,8 +18,13 @@ import dev.engram.edge.skills.AndroidSkillExecutor
 import dev.engram.edge.skills.RunIntentArgs
 import android.app.Application
 import android.graphics.Bitmap
+import androidx.compose.runtime.State
+import androidx.compose.runtime.snapshotFlow
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import dev.engram.edge.state.EngramAppStateCoordinator
+import dev.engram.edge.state.HudBannerProjection
+import dev.engram.edge.state.createHeadlessHudProjection
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -48,16 +53,10 @@ class EngramEdgeViewModel(app: Application) : AndroidViewModel(app) {
 
     private val container = (app as EngramEdgeApplication).container
     private val tokenStore = EncryptedTokenStore(app)
+    val appState: EngramAppStateCoordinator = container.appState
 
     private val _uiState = MutableStateFlow(EngramConversationUiState())
     val uiState: StateFlow<EngramConversationUiState> = _uiState.asStateFlow()
-
-    init {
-        val savedToken = tokenStore.loadHfToken().orEmpty()
-        if (savedToken.isNotBlank()) {
-            _uiState.update { it.copy(hfTokenInput = savedToken) }
-        }
-    }
 
     val memoryTelemetry: StateFlow<DeviceMemoryTelemetry> = container.residencyMonitor.telemetry
     val galleryState: StateFlow<GalleryRuntimeState> = container.galleryManager.state
@@ -69,6 +68,46 @@ class EngramEdgeViewModel(app: Application) : AndroidViewModel(app) {
     val liveBurstStatus: StateFlow<LiveBurstStatus> = container.cloudBridge.liveBurstStatus
     val speechState: StateFlow<SpeechUiState> = container.speechController.state
 
+    /**
+     * Headless `@Composable` HUD projection powered by `androidx.appstate.transform`, fusing
+     * cross-component `StateStore` snapshots with live hardware telemetry `StateFlow`s off the UI thread.
+     */
+    val hudProjection: State<HudBannerProjection> = createHeadlessHudProjection(
+        coordinator = container.appState,
+        memoryFlow = memoryTelemetry,
+        galleryFlow = galleryState,
+        decisionFlow = lastDecision,
+        scope = viewModelScope
+    )
+
+    init {
+        val savedToken = tokenStore.loadHfToken().orEmpty()
+        if (savedToken.isNotBlank()) {
+            _uiState.update { it.copy(hfTokenInput = savedToken) }
+        }
+
+        // Observe Jetpack AppState (`StateStore` + `PersistToDataStore`) across process recreation & AppFunctions
+        viewModelScope.launch {
+            snapshotFlow {
+                Triple(
+                    container.appState.preferences.value,
+                    container.appState.vaultBookmark.value,
+                    container.appState.runtimeStatus.value
+                )
+            }.collect { (prefs, bookmark, runtime) ->
+                _uiState.update { current ->
+                    current.copy(
+                        isOnlineMode = prefs.isOnlineMode,
+                        autoSpeakReplies = prefs.autoSpeakReplies,
+                        lastStoredMemoryId = bookmark.lastStoredMemoryId ?: current.lastStoredMemoryId,
+                        lastStoredMemoryTitle = bookmark.lastStoredMemoryTitle ?: current.lastStoredMemoryTitle,
+                        isTorchActive = runtime.isTorchActive
+                    )
+                }
+            }
+        }
+    }
+
     fun updateQueryInput(text: String) {
         _uiState.update { it.copy(queryInput = text) }
     }
@@ -79,8 +118,8 @@ class EngramEdgeViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun toggleOnlineMode() {
+        val next = container.appState.toggleOnlineMode()
         _uiState.update {
-            val next = !it.isOnlineMode
             it.copy(
                 isOnlineMode = next,
                 executedTierBadge = if (next) "HYBRID ARMED" else "AIRPLANE EDGE"
@@ -89,7 +128,8 @@ class EngramEdgeViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun toggleAutoSpeak() {
-        _uiState.update { it.copy(autoSpeakReplies = !it.autoSpeakReplies) }
+        val next = container.appState.toggleAutoSpeak()
+        _uiState.update { it.copy(autoSpeakReplies = next) }
     }
 
     private var turnJob: kotlinx.coroutines.Job? = null

@@ -107,7 +107,7 @@ abstract class BaseEngramAppFunctionService : AppFunctionService() {
             query = params.query,
             limit = effectiveLimit
         )
-        response.results.map { hit ->
+        val items = response.results.map { hit ->
             MemoryAppFunctionItem(
                 id = hit.chunk.id,
                 title = hit.chunk.title,
@@ -116,6 +116,11 @@ abstract class BaseEngramAppFunctionService : AppFunctionService() {
                 rrfScore = hit.rrfScore
             )
         }
+        container.appState.recordExternalAppFunctionCall(
+            functionName = "searchMemories",
+            summary = "${items.size} hits for '${params.query.take(24)}'"
+        )
+        items
     }
 
     /**
@@ -139,13 +144,19 @@ abstract class BaseEngramAppFunctionService : AppFunctionService() {
                 isTrustedSource = false
             )
         ) {
-            is IngestionOutcome.Stored -> MemoryAppFunctionItem(
-                id = outcome.entity.id,
-                title = outcome.entity.title,
-                content = outcome.entity.contentText,
-                modality = outcome.entity.modalityType,
-                rrfScore = 1.0
-            )
+            is IngestionOutcome.Stored -> {
+                container.appState.recordExternalAppFunctionCall(
+                    functionName = "saveMemoryNote",
+                    summary = "saved '${outcome.entity.title.take(24)}'"
+                )
+                MemoryAppFunctionItem(
+                    id = outcome.entity.id,
+                    title = outcome.entity.title,
+                    content = outcome.entity.contentText,
+                    modality = outcome.entity.modalityType,
+                    rrfScore = 1.0
+                )
+            }
             is IngestionOutcome.BlockedByPromptShield -> throw AppFunctionInvalidArgumentException(
                 "Blocked by EngramEdge PromptInjectionShield: ${outcome.verdict.reason}"
             )
@@ -166,13 +177,18 @@ abstract class BaseEngramAppFunctionService : AppFunctionService() {
             requestedMetric = params.metric?.ifBlank { "ALL" } ?: "ALL",
             forceLiveMeasurement = params.forceLiveMeasurement
         )
+        val concise = snap.formatConciseSummary()
+        container.appState.recordExternalAppFunctionCall(
+            functionName = "readWristVitals",
+            summary = snap.heartRateBpm?.let { "${it} BPM" } ?: snap.providerSource
+        )
         WristVitalsAppFunctionItem(
             providerSource = snap.providerSource,
             heartRateBpm = snap.heartRateBpm ?: 0,
             spo2Percent = snap.spo2Percent ?: 0,
             stepsToday = snap.stepsToday ?: 0,
             caloriesKcal = snap.caloriesKcal ?: 0,
-            summary = snap.formatConciseSummary()
+            summary = concise
         )
     }
 }

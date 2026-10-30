@@ -8,6 +8,7 @@ import dev.engram.edge.data.memory.IngestionOutcome
 import dev.engram.edge.data.memory.MemoryChunkEntity
 import dev.engram.edge.edge.AdaptiveResidencyMonitor
 import dev.engram.edge.security.PromptInjectionShield
+import dev.engram.edge.state.EngramAppStateCoordinator
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
@@ -67,7 +68,8 @@ class AndroidSkillExecutor(
     private val residencyMonitor: AdaptiveResidencyMonitor,
     private val promptShield: PromptInjectionShield,
     private val betterHealthBridge: BetterHealthTrackerBridge = BetterHealthTrackerBridge(context),
-    private val memoryRepositoryProvider: (() -> HybridMemoryRepository)? = null
+    private val memoryRepositoryProvider: (() -> HybridMemoryRepository)? = null,
+    private val appState: EngramAppStateCoordinator? = null
 ) {
     companion object {
         const val ACTION_READ_SENSORS = "dev.engram.edge.action.READ_SENSORS"
@@ -463,6 +465,7 @@ class AndroidSkillExecutor(
             return runCatching {
                 camCtrl.enableTorch(desiredState)
                 torchEnabled = desiredState
+                appState?.setTorchActive(desiredState)
                 SkillExecutionResult(
                     executed = true,
                     skillName = "toggle-watch-torch",
@@ -503,6 +506,7 @@ class AndroidSkillExecutor(
         return runCatching {
             cameraManager.setTorchMode(flashCameraId, desiredState)
             torchEnabled = desiredState
+            appState?.setTorchActive(desiredState)
             SkillExecutionResult(
                 executed = true,
                 skillName = "toggle-watch-torch",
